@@ -4,30 +4,30 @@ Migrate already-pinned IPFS CIDs onto **Filecoin Onchain Cloud (FOC)** without
 re-chunking. Each original CID stays byte-for-byte intact and individually
 retrievable over IPFS, while far fewer pieces are committed on-chain.
 
-The storage provider pulls each object's bytes directly from a trustless IPFS
-gateway. Your machine streams each object once to compute its piece commitment
+The storage provider pulls each object's bytes directly from a [trustless IPFS
+gateway](docs/glossary.md#trustless-gateway). Your machine streams each object once to compute its piece commitment
 and stores none of the payload.
 
 ## How it works
 
 1. **commP pass.** For each CID, fetch its CAR (`?format=car&dag-scope=all`) from a
    trustless gateway and stream it through the Filecoin piece hasher to get its
-   **PieceCID v2** (FRC-0069). The CAR is rooted at the original CID, so storing it
+   [**PieceCID v2**](docs/glossary.md#piececid-v2) ([FRC-0069](docs/glossary.md#frc-0069)). The CAR is rooted at the original CID, so storing it
    keeps the CID intact, and the CAR root is checked against the requested CID.
 2. **Pack.** Bin-pack pieces into aggregates by the `--piece-size` target (default
    32 GiB; cap it to the provider's maximum piece size). Each aggregate's root is the
-   **aggregate piece commitment** — the merkle root of the sub-piece commitments,
+   [**aggregate piece commitment**](docs/glossary.md#aggregate-piece-commitment) — the merkle root of the [sub-piece](docs/glossary.md#sub-piece) commitments,
    ordered largest-padded-first and zero-padded to the next power of two, the same
    value the provider re-derives on add.
-3. **Pull.** For each sub-piece, ask the provider to `POST /pdp/piece/pull` from
+3. **Pull.** For each sub-piece, ask the provider via [PDP pull](docs/glossary.md#pdp-pull) to `POST /pdp/piece/pull` from
    `<source-base>/piece/{pcidv2}` — a redirect endpoint that 302s to the gateway CAR.
    The provider follows the redirect, downloads the CAR from the gateway, verifies its
    CommP against the declared PieceCID, and parks it. The migrator serves only the
    redirect, so no payload passes through it.
 4. **Aggregate-add.** `POST /pdp/data-sets/{id}/pieces` with the parked sub-pieces.
    The provider recomputes the aggregate piece commitment, confirms it equals the
-   submitted root, and lands one on-chain AddPieces. With the data set's
-   `withIPFSIndexing` set, the provider indexes each parked CAR's blocks, so every
+   submitted root, and lands one on-chain AddPieces. With the [data set's](docs/glossary.md#data-set)
+   [`withIPFSIndexing`](docs/glossary.md#withipfsindexing) set, the provider indexes each parked CAR's blocks, so every
    original CID stays retrievable from the IPFS network by the same CID.
 
 The on-chain operation count is about `total_size / piece_size` rather than one per
@@ -219,7 +219,7 @@ this flow: data set creation, AddPieces, and the recurring proof-of-possession
 transactions. The migrator authorizes each by an EIP-712 signature carried in the call's
 `extraData`, and the provider sends the transaction.
 
-The **migrator** is the data set's FWSS payer and spends both currencies:
+The **migrator** is the data set's [FWSS](docs/glossary.md#filecoinwarmstorageservice-fwss) payer and spends both currencies:
 
 - **USDFC** for storage. Data set creation opens a payment rail from the migrator to the
   provider and requires the migrator to have deposited enough USDFC to cover the minimum
@@ -227,8 +227,8 @@ The **migrator** is the data set's FWSS payer and spends both currencies:
   set grows. See `FilecoinWarmStorageService.dataSetCreated` / `piecesAdded` in
   [filecoin-services](https://github.com/FilOzone/filecoin-services).
 - **FIL** for the migrator's own setup transactions, sent from the migrator's wallet:
-  approving USDFC to the FilecoinPay contract, depositing USDFC, and approving
-  FilecoinWarmStorageService as a payments operator with sufficient rate and lockup
+  approving USDFC to the [FilecoinPay](docs/glossary.md#filecoinpay) contract, depositing USDFC, and approving
+  [FilecoinWarmStorageService](docs/glossary.md#filecoinwarmstorageservice-fwss) as a payments operator with sufficient rate and lockup
   allowance.
 
 Filecoin gas cost scales with the block base fee, and PDP transactions burn a large
