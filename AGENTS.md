@@ -34,7 +34,9 @@ skills first.
 | `src/migrate.ts`, `src/runner.ts`, `src/aggregate.ts`, `src/piece.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior` |
 | `src/gateway.ts`, `src/redirect-server*.ts`, fetch / HTTP code | `prefer-head-over-get`, `sample-not-sweep-at-scale`, `onchain-canonical-not-side-channel` |
 | `src/db.ts`, schema changes | `no-pre-release-migrations`, `memory-aware-scaling` |
-| `src/index.ts`, CLI flags, env vars, help text | `sensible-defaults`, `default-mainnet-network`, `no-internal-jargon-leakage`, `anti-ai-smell` |
+| `src/index.ts`, CLI flags, env vars, help text, `src/server.ts` | `sensible-defaults`, `default-mainnet-network`, `memory-aware-scaling`, `no-internal-jargon-leakage`, `anti-ai-smell` |
+| `src/metrics.ts`, `src/util.ts` | `no-internal-jargon-leakage`, `anti-ai-smell`, `documentation-voice` |
+| `src/piece-aggregate.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior` |
 | `test/**` | `verify-actual-behavior`, `no-vendor-leakage`, `no-internal-jargon-leakage` |
 | `package.json` dep add / SDK swap | `prefer-upstream-libraries`, `verify-actual-behavior` |
 | `docs/**`, `README.md`, persistent docs | `documentation-voice`, `anti-ai-smell`, `no-vendor-leakage`, `no-internal-jargon-leakage` |

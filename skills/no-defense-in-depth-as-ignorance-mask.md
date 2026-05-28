@@ -5,7 +5,7 @@
 ## Rule
 
 - Treat the urge to add a defensive layer as a red flag. Stop and ask: do I actually know whether this case can happen?
-- Before adding the guard, read the source for the API/contract/library at the exact version the project depends on. Cite the file:line that proves the case is real or impossible.
+- Before adding the guard, read the source for the API/contract/library at the exact version the project depends on. Cite by symbol (`<repo> <path/file.ext> <SymbolName>`) that proves the case is real or impossible; line numbers drift.
 - If the source says the case cannot happen at this version, do not add the guard. Add a `// verified: ... cannot return X at version Y` comment instead.
 - If the source confirms the case can happen, handle it explicitly with the correct branch. Cite the source. No catch-all `if (maybe) ...`.
 - If you cannot read the source (closed binary, missing repo), probe the live system and observe. Cite the probe.
@@ -27,7 +27,7 @@ if (resp.ok && resp.addMessageOk && resp.piecesAdded) {
 }
 ```
 
-The five layers exist because the writer did not check what each field means. The real fix is to read `pdp/handlers.go:handleGetPieceAdditionStatus` once and use the three documented signals.
+The five layers exist because the writer did not check what each field means. The real fix is to read `pdp/handlers.go handleGetPieceAdditionStatus` once and use the three documented signals.
 
 ### Good
 
