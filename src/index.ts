@@ -32,7 +32,7 @@ import { runPlan } from './migrate.ts'
 import { fetchAndComputePiece } from './piece.ts'
 import { Runner } from './runner.ts'
 import { startServer } from './server.ts'
-import { log, parseCidList, parseSize } from './util.ts'
+import { log, parseCidList, parsePositiveInt, parseSize } from './util.ts'
 
 const DEFAULT_DB = './migrate.db'
 
@@ -137,7 +137,7 @@ async function cmdPlan(argv: string[]): Promise<void> {
     const summary = await runPlan(db, {
       gateways: gatewaysFrom(values),
       aggregateSizeBytes: parseSize(values['piece-size'] as string),
-      concurrency: Number.parseInt(values.concurrency as string, 10),
+      concurrency: parsePositiveInt(values.concurrency as string, '--concurrency'),
     })
 
     log('')
@@ -146,7 +146,11 @@ async function cmdPlan(argv: string[]): Promise<void> {
       log(`Failed: ${summary.failed} (run 'status' for details; re-run 'plan' to retry)`)
     }
     if (summary.oversized.length > 0) {
-      log(`Oversized (need larger --piece-size): ${summary.oversized.join(', ')}`)
+      log(
+        `Oversized: ${summary.oversized.join(', ')} ` +
+          `(piece padded size exceeds --piece-size aggregate budget). ` +
+          `Pieces above the provider's per-piece pull limit (~1 GiB raw) cannot be migrated as one piece either.`
+      )
     }
     console.log(JSON.stringify(summary, null, 2))
   } finally {
@@ -198,7 +202,7 @@ async function cmdReport(argv: string[]): Promise<void> {
     const report = await runReport(db, {
       network,
       rpcUrl: values['rpc-url'],
-      dataSetId: Number.parseInt(values['data-set-id'] as string, 10),
+      dataSetId: parsePositiveInt(values['data-set-id'] as string, '--data-set-id'),
     })
     if (values.json) {
       console.log(JSON.stringify(report, null, 2))
@@ -241,12 +245,12 @@ async function cmdPdpSubmit(argv: string[]): Promise<void> {
       privateKey: key as `0x${string}`,
       network,
       rpcUrl: values['rpc-url'],
-      dataSetId: Number.parseInt(values['data-set-id'] as string, 10),
+      dataSetId: parsePositiveInt(values['data-set-id'] as string, '--data-set-id'),
       sourceBase: values['source-base'] as string,
-      maxInFlight: Number.parseInt(values['max-in-flight'] as string, 10),
+      maxInFlight: parsePositiveInt(values['max-in-flight'] as string, '--max-in-flight'),
       maxBaseFee: values['max-base-fee'] != null ? BigInt(values['max-base-fee']) : DEFAULT_MAX_BASE_FEE,
-      pollMs: Number.parseInt(values['poll-seconds'] as string, 10) * 1000,
-      pullBatch: Number.parseInt(values['pull-batch'] as string, 10),
+      pollMs: parsePositiveInt(values['poll-seconds'] as string, '--poll-seconds') * 1000,
+      pullBatch: parsePositiveInt(values['pull-batch'] as string, '--pull-batch'),
     })
     const committed = db.aggregates().filter((a) => a.status === 'committed')
     log(`committed ${committed.length} aggregate(s). Confirm at ${explorerBase(network)} (data set ${values['data-set-id']})`)
@@ -280,7 +284,7 @@ async function cmdCreateDataSet(argv: string[]): Promise<void> {
     rpcUrl: values['rpc-url'],
     providerId: BigInt(values['provider-id'] as string),
     cdn: values.cdn === true,
-    timeoutMs: Number.parseInt(values['timeout-seconds'] as string, 10) * 1000,
+    timeoutMs: parsePositiveInt(values['timeout-seconds'] as string, '--timeout-seconds') * 1000,
   })
   console.log(JSON.stringify(result, null, 2))
 }
@@ -291,7 +295,7 @@ async function cmdRedirectServe(argv: string[]): Promise<void> {
     options: { db: { type: 'string', default: DEFAULT_DB }, port: { type: 'string', default: '4322' } },
   })
   const db = new MigrationDB(values.db as string)
-  startRedirectServer(db, Number.parseInt(values.port as string, 10))
+  startRedirectServer(db, parsePositiveInt(values.port as string, '--port'))
 }
 
 async function cmdGas(argv: string[]): Promise<void> {
@@ -337,7 +341,7 @@ async function cmdServe(argv: string[]): Promise<void> {
 
   const runner = new Runner(db, {
     gateways: gatewaysFrom(values),
-    concurrency: Number.parseInt(values.concurrency as string, 10),
+    concurrency: parsePositiveInt(values.concurrency as string, '--concurrency'),
     aggregateSizeBytes: parseSize(values['piece-size'] as string),
   })
 
@@ -349,7 +353,7 @@ async function cmdServe(argv: string[]): Promise<void> {
           maxBaseFee: values['max-base-fee'] != null ? BigInt(values['max-base-fee']) : DEFAULT_MAX_BASE_FEE,
         }
       : undefined
-  startServer(db, runner, Number.parseInt(values.port as string, 10), gas)
+  startServer(db, runner, parsePositiveInt(values.port as string, '--port'), gas)
   // Server keeps the process alive; the runner starts via the dashboard/API.
   log(`Loaded ${db.counts().pending} pending CID(s). Press Start in the dashboard (or POST /api/start).`)
 }

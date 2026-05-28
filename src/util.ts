@@ -70,6 +70,18 @@ export async function pool<T, R>(
   return results
 }
 
+/** Parse a positive integer flag value; throws a clear error for missing or non-positive input. */
+export function parsePositiveInt(raw: string | undefined, flag: string): number {
+  if (raw == null) {
+    throw new Error(`${flag} requires a value`)
+  }
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || String(n) !== raw.trim()) {
+    throw new Error(`${flag} must be a positive integer (got ${JSON.stringify(raw)})`)
+  }
+  return n
+}
+
 /** Read a CID list file: one CID per line, blank lines and `#` comments ignored. */
 export function parseCidList(text: string): string[] {
   return text
