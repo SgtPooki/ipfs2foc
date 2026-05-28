@@ -56,6 +56,7 @@ This value is verified byte-for-byte against `go-commp-utils` in `test/`.
 - A source that serves **deterministic trustless CARs**. Known working:
   `gateway.pinata.cloud`, `trustless-gateway.link`. A gateway that returns reassembled
   files instead of CARs does not work; `probe` reports which case a gateway falls into.
+  See [`docs/sources.md`](docs/sources.md) for per-provider notes and probe commands.
 
 ```bash
 npm install   # or pnpm install
