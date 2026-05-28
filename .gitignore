@@ -1,0 +1,16 @@
+node_modules/
+out/
+*.log
+.DS_Store
+
+# Secrets — never commit
+.env
+.env.*
+
+# Local state
+*.db
+*.db-wal
+*.db-shm
+
+# Local agent/session files
+.claude/

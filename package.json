@@ -1,0 +1,28 @@
+{
+  "name": "foc-migrate",
+  "version": "0.0.1",
+  "description": "Migrate already-pinned IPFS CIDs onto Filecoin Onchain Cloud (FOC) without re-chunking. Mode A: pull CARs from a trustless gateway, compute piece commitments, bin-pack into PODSI aggregates, and emit mk20 deal manifests.",
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "bin": {
+    "foc-migrate": "src/index.ts"
+  },
+  "scripts": {
+    "start": "node src/index.ts",
+    "probe": "node src/index.ts probe",
+    "commp": "node src/index.ts commp",
+    "plan": "node src/index.ts plan",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@filoz/synapse-sdk": "^0.41.0",
+    "@ipld/car": "^5.4.0",
+    "@web3-storage/data-segment": "^5.3.0",
+    "iso-filecoin": "^7.4.7",
+    "multiformats": "^13.4.1",
+    "viem": "^2.21.0"
+  },
+  "license": "MIT"
+}
