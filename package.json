@@ -17,13 +17,27 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@chainsafe/libp2p-noise": "^17.0.0",
+    "@chainsafe/libp2p-yamux": "^8.0.1",
     "@filoz/synapse-core": "^0.5.2",
     "@filoz/synapse-sdk": "^0.41.0",
     "@ipld/car": "^5.4.0",
+    "@ipshipyard/libp2p-auto-tls": "^2.0.1",
+    "@libp2p/autonat": "^3.0.20",
+    "@libp2p/http": "^2.0.2",
+    "@libp2p/identify": "^4.1.6",
+    "@libp2p/keychain": "^6.1.1",
+    "@libp2p/upnp-nat": "^4.0.20",
+    "@libp2p/websockets": "^10.1.13",
     "@web3-storage/data-segment": "^5.3.0",
     "iso-filecoin": "^7.4.7",
+    "libp2p": "^3.3.2",
     "multiformats": "^13.4.1",
     "viem": "^2.21.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
+  }
 }

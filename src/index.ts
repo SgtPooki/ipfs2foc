@@ -26,6 +26,7 @@ import { DEFAULT_GATEWAYS, probeGateway } from './gateway.ts'
 import { runCreateDataSet } from './create-data-set.ts'
 import { explorerBase } from './pdp-verifier.ts'
 import { startRedirectServer } from './redirect-server.ts'
+import { startLibp2pRedirectServer } from './redirect-server-libp2p.ts'
 import { runSubmitPdp } from './submit-pdp.ts'
 import { runReport } from './report.ts'
 import { runPlan } from './migrate.ts'
@@ -47,7 +48,7 @@ Usage:
   foc-migrate serve  [--db <file>] [--cids <file>] [--gateway URL]... [--piece-size 32GiB]
                      [--concurrency 8] [--port 4321] [--network mainnet|calibration] [--max-base-fee N]
   foc-migrate gas    [--network mainnet|calibration] [--rpc-url URL] [--max-base-fee N]
-  foc-migrate redirect-serve [--db <file>] [--port 4322]
+  foc-migrate redirect-serve [--db <file>] [--port 4322] [--ingress funnel|libp2p]
   foc-migrate create-data-set --provider-id <id> [--network mainnet|calibration] [--cdn]
                      (uses PRIVATE_KEY env)
   foc-migrate pdp-submit --data-set-id <id> --source-base <https-url> [--db <file>]
@@ -292,9 +293,24 @@ async function cmdCreateDataSet(argv: string[]): Promise<void> {
 async function cmdRedirectServe(argv: string[]): Promise<void> {
   const { values } = parseArgs({
     args: argv,
-    options: { db: { type: 'string', default: DEFAULT_DB }, port: { type: 'string', default: '4322' } },
+    options: {
+      db: { type: 'string', default: DEFAULT_DB },
+      port: { type: 'string', default: '4322' },
+      ingress: { type: 'string', default: 'funnel' },
+    },
   })
   const db = new MigrationDB(values.db as string)
+  const ingress = values.ingress as string
+  if (ingress === 'libp2p') {
+    // For libp2p ingress, `--port` is the libp2p WSS bind port. 0 = OS-assigned.
+    // Use 443 (with cap_net_bind_service) for the cleanest URL; any high port also works.
+    const port = values.port === '4322' ? 0 : parsePositiveInt(values.port as string, '--port')
+    await startLibp2pRedirectServer(db, { port })
+    return
+  }
+  if (ingress !== 'funnel') {
+    throw new Error(`unknown --ingress ${ingress} (expected funnel|libp2p)`)
+  }
   startRedirectServer(db, parsePositiveInt(values.port as string, '--port'))
 }
 

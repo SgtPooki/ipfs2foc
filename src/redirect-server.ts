@@ -8,19 +8,27 @@
  * pull client follows the cross-origin redirect and downloads the CAR straight
  * from the gateway, so this server relays no payload: it answers only the 302.
  *
- * Run it behind any public HTTPS ingress (Tailscale Funnel, a tunnel, a VPS).
- * The public base URL is passed to `submit` as the pull source base; this server
- * only needs to be reachable by the provider.
+ * Ingress: front this with any public HTTPS path. Two ingress paths ship in
+ * this repo:
+ *   - `--ingress funnel` (default): user runs `tailscale funnel <port>`.
+ *   - `--ingress libp2p`: a js-libp2p node with autotls obtains a
+ *     `*.libp2p.direct` cert and shares its WSS listener with the redirect
+ *     handler on one TCP port. See `redirect-server-libp2p.ts`.
  */
 
-import { createServer } from 'node:http'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { MigrationDB } from './db.ts'
 import { log } from './util.ts'
 
 const PIECE_PATH = /^\/piece\/([^/]+)$/
 
-export function startRedirectServer(db: MigrationDB, port: number): void {
-  const server = createServer((req, res) => {
+/**
+ * Shared request handler. Used by both the Funnel/stdlib HTTP server here and
+ * the libp2p ingress that monkey-patches itself onto the @libp2p/websockets
+ * listener's `https.Server`.
+ */
+export function makeRedirectHandler(db: MigrationDB): (req: IncomingMessage, res: ServerResponse) => void {
+  return (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
 
     // Health check for ingress probes.
@@ -49,7 +57,11 @@ export function startRedirectServer(db: MigrationDB, port: number): void {
     // redirect, so each provider pull resolves freshly.
     res.writeHead(302, { location: target, 'cache-control': 'no-store' })
     res.end()
-  })
+  }
+}
+
+export function startRedirectServer(db: MigrationDB, port: number): void {
+  const server = createServer(makeRedirectHandler(db))
 
   server.listen(port, () => {
     log(`foc-migrate redirect server on http://localhost:${port} (GET /piece/{pieceCidV2} -> 302 gateway CAR)`)
