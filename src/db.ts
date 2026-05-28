@@ -81,6 +81,8 @@ export interface AggregateRow {
   dataSetId: string | null
   pieceId: string | null
   txHash: string | null
+  /** Block number of the AddPieces receipt; set when the PiecesAdded event is verified. */
+  committedBlock: string | null
   memberCount: number
   /** Lifecycle timestamps; null until the corresponding transition fires. */
   submittedAt: string | null
@@ -121,6 +123,7 @@ export class MigrationDB {
         data_set_id      TEXT,
         piece_id         TEXT,
         tx_hash          TEXT,
+        committed_block  TEXT,
         error            TEXT,
         submitted_at     TEXT,
         parked_at        TEXT,
@@ -292,7 +295,7 @@ export class MigrationDB {
     const rows = this.#db
       .prepare(
         `SELECT a.idx, a.root_piece_cid, a.piece_size_bytes, a.status, a.pull_id,
-                a.data_set_id, a.piece_id, a.tx_hash, a.error,
+                a.data_set_id, a.piece_id, a.tx_hash, a.committed_block, a.error,
                 a.submitted_at, a.parked_at, a.committed_at,
                 (SELECT COUNT(*) FROM aggregate_members m WHERE m.aggregate_idx = a.idx) AS member_count
          FROM aggregates a ORDER BY a.idx`
@@ -310,6 +313,7 @@ export class MigrationDB {
         dataSetId: str(row.data_set_id),
         pieceId: str(row.piece_id),
         txHash: str(row.tx_hash),
+        committedBlock: str(row.committed_block),
         memberCount: Number(row.member_count),
         submittedAt: str(row.submitted_at),
         parkedAt: str(row.parked_at),
@@ -367,19 +371,75 @@ export class MigrationDB {
       .run(new Date().toISOString(), idx)
   }
 
-  /** Record the on-chain AddPiece: data set, piece id, and transaction hash. */
-  markCommitted(idx: number, info: { dataSetId: string; pieceId?: string; txHash?: string }): void {
+  /**
+   * Record the on-chain AddPiece: data set, piece id, transaction hash, and the
+   * receipt's block number. The block number is set only when the PiecesAdded
+   * event was parsed and matched against the local aggregate root; absence
+   * marks an unverified commit (see `markCommittedUnverified`).
+   */
+  markCommitted(idx: number, info: {
+    dataSetId: string
+    pieceId?: string
+    txHash?: string
+    committedBlock?: string
+  }): void {
     this.#db
       .prepare(
-        `UPDATE aggregates SET status='committed', data_set_id=?, piece_id=?, tx_hash=?, committed_at=? WHERE idx=?`
+        `UPDATE aggregates SET status='committed', data_set_id=?, piece_id=?, tx_hash=?,
+                                committed_block=?, committed_at=? WHERE idx=?`
       )
-      .run(info.dataSetId, info.pieceId ?? null, info.txHash ?? null, new Date().toISOString(), idx)
+      .run(
+        info.dataSetId,
+        info.pieceId ?? null,
+        info.txHash ?? null,
+        info.committedBlock ?? null,
+        new Date().toISOString(),
+        idx
+      )
+  }
+
+  /**
+   * Record a commit whose `addStatus` came back ok but whose receipt parse did
+   * not yield a matching PiecesAdded event (RPC outage, log filter race). The
+   * row is marked `committed` so the in-flight cap moves, but `committed_block`
+   * stays null and `error` records the reason so `report` can re-verify against
+   * the chain on a later run.
+   */
+  markCommittedUnverified(
+    idx: number,
+    info: { dataSetId: string; pieceId?: string; txHash?: string; reason: string }
+  ): void {
+    this.#db
+      .prepare(
+        `UPDATE aggregates SET status='committed', data_set_id=?, piece_id=?, tx_hash=?,
+                                committed_block=NULL, error=?, committed_at=? WHERE idx=?`
+      )
+      .run(
+        info.dataSetId,
+        info.pieceId ?? null,
+        info.txHash ?? null,
+        info.reason,
+        new Date().toISOString(),
+        idx
+      )
   }
 
   markAggregateFailed(idx: number, error?: string): void {
     this.#db
       .prepare(`UPDATE aggregates SET status='failed', error=COALESCE(?, error) WHERE idx=?`)
       .run(error ?? null, idx)
+  }
+
+  /**
+   * Reset every failed aggregate back to `planned` and clear its error. The
+   * runner picks them up on the next pass; pull POSTs are idempotent, and the
+   * on-chain active-pieces guard skips an aggregate whose root already landed.
+   */
+  resetFailedAggregates(): number {
+    const result = this.#db
+      .prepare(`UPDATE aggregates SET status='planned', error=NULL WHERE status='failed'`)
+      .run()
+    return Number(result.changes)
   }
 
   /** Insert a pull-batch attempt row at start; the caller updates it via `recordPullBatchResult`. */

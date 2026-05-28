@@ -24,7 +24,7 @@ import type { MigrationDB } from './db.ts'
 import { classifyBaseFee, getBaseFee, resolveRpcUrl } from './gas.ts'
 import { formatBytes, formatDuration, formatRate, Timer } from './metrics.ts'
 import { PdpClient, PullBackpressure, type PullResponse } from './pdp.ts'
-import { activePieceCids } from './pdp-verifier.ts'
+import { activePieceCids, fetchAddPiecesEvent } from './pdp-verifier.ts'
 import { pieceAggregateCommP } from './piece-aggregate.ts'
 import { log } from './util.ts'
 
@@ -193,15 +193,62 @@ export async function runSubmitPdp(db: MigrationDB, opts: SubmitPdpOptions): Pro
     }
     const addMs = addTimer.stop()
     if (status.ok) {
-      // Capture the first confirmed piece ID for explorer linking; the rest
-      // belong to in-batch sub-pieces. `confirmedPieceIds` is parsed from
-      // Curio's view of the on-chain AddPieces, not from our local state.
+      // addStatus's three signals (txStatus + addMessageOk + piecesAdded)
+      // confirm Curio's view: the AddPieces tx landed, the inner call
+      // succeeded, and Curio finished bookkeeping. The PDPVerifier's
+      // PiecesAdded event is the canonical chain witness; verify the
+      // aggregate root we presigned matches what the contract emitted
+      // before flipping to committed. See `skills/validate-at-each-step.md`
+      // and `skills/onchain-canonical-not-side-channel.md`.
       const pieceId = status.confirmedPieceIds?.[0]?.toString()
-      db.markCommitted(agg.idx, { dataSetId: String(opts.dataSetId), txHash, pieceId })
+      let event: Awaited<ReturnType<typeof fetchAddPiecesEvent>> = null
+      let eventErr: string | null = null
+      try {
+        event = await fetchAddPiecesEvent(rpcUrl, opts.network, opts.dataSetId, txHash)
+      } catch (err) {
+        eventErr = err instanceof Error ? err.message : String(err)
+      }
+      if (event != null) {
+        if (!event.pieceCids.includes(aggregate.rootPieceCid)) {
+          const reason =
+            `PiecesAdded event root mismatch: expected ${aggregate.rootPieceCid}, ` +
+            `saw [${event.pieceCids.join(', ')}]`
+          db.markAggregateFailed(agg.idx, `AddPieces tx ${txHash}: ${reason}`)
+          log(`aggregate ${agg.idx}: ${reason}`)
+          continue
+        }
+        // PDPVerifier emits one event per AddPieces call with parallel
+        // pieceIds/pieceCids arrays; the aggregate root's pieceId is the
+        // entry at the matching index.
+        const eventPieceId =
+          event.pieceIds[event.pieceCids.indexOf(aggregate.rootPieceCid)]?.toString() ?? pieceId
+        db.markCommitted(agg.idx, {
+          dataSetId: String(opts.dataSetId),
+          txHash,
+          pieceId: eventPieceId,
+          committedBlock: event.blockNumber.toString(),
+        })
+        log(
+          `aggregate ${agg.idx}: committed in ${formatDuration(addMs)} ` +
+            `(data set ${opts.dataSetId}, tx ${txHash}, block ${event.blockNumber}, pieceId ${eventPieceId})`
+        )
+      } else {
+        // addStatus said ok but no PiecesAdded event was visible on the
+        // receipt the RPC returned. Park the row as committed-unverified
+        // so the in-flight cap moves, and let `report`'s on-chain pass
+        // reconcile against `activePieceCids`.
+        const reason = eventErr ?? 'PiecesAdded event not found on receipt'
+        db.markCommittedUnverified(agg.idx, {
+          dataSetId: String(opts.dataSetId),
+          txHash,
+          pieceId,
+          reason,
+        })
+        log(`aggregate ${agg.idx}: committed unverified (tx ${txHash}) — ${reason}`)
+      }
       totalAddMs += addMs
       committedCount += 1
       committedBytes += aggBytes
-      log(`aggregate ${agg.idx}: committed in ${formatDuration(addMs)} (data set ${opts.dataSetId}, tx ${txHash})`)
     } else {
       const reason = status.reason ?? 'AddPieces tx did not confirm'
       db.markAggregateFailed(agg.idx, `AddPieces tx ${txHash}: ${reason}`)

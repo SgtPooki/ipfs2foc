@@ -7,8 +7,8 @@
  * `readContract` call against the canonical `abis.pdp` ABI.
  */
 
-import { type Client, type Hash, type Transport, createPublicClient, http } from 'viem'
-import { getBlockNumber, getTransactionReceipt, readContract } from 'viem/actions'
+import { type Client, type Hash, type Transport, createPublicClient, http, parseEventLogs } from 'viem'
+import { getBlockNumber, getTransactionReceipt, readContract, waitForTransactionReceipt } from 'viem/actions'
 import { pdp as PDP_ABI } from '@filoz/synapse-core/abis'
 import { type Chain as SynapseChain, calibration, mainnet } from '@filoz/synapse-core/chains'
 import {
@@ -17,6 +17,7 @@ import {
   getActivePieces as synapseGetActivePieces,
   getNextChallengeEpoch,
 } from '@filoz/synapse-core/pdp-verifier'
+import { hexToPieceCID } from '@filoz/synapse-core/piece'
 
 function chainFor(network: 'calibration' | 'mainnet'): SynapseChain {
   return network === 'mainnet' ? mainnet : calibration
@@ -150,6 +151,51 @@ export async function dataSetProofHealth(
     activePieceCount,
     provenSinceAdd,
     inGoodStanding,
+  }
+}
+
+/**
+ * The on-chain PiecesAdded event for a given data set, parsed from an
+ * AddPieces tx receipt. PDPVerifier emits one event per AddPieces call
+ * carrying parallel arrays of pieceIds + pieceCids (verified against the
+ * `pdp` ABI in `@filoz/synapse-core/abis`, event `PiecesAdded(uint256
+ * indexed setId, uint256[] pieceIds, struct Cids.Cid[] pieceCids)`).
+ *
+ * Returns the event matching `dataSetId`, with its pieceIds and pieceCid
+ * v2 strings, plus the receipt's block number. Returns null when the
+ * receipt carries no matching event (a reverted inner call leaves no
+ * PiecesAdded log even when the tx itself succeeded).
+ */
+export interface AddPiecesEvent {
+  blockNumber: bigint
+  pieceIds: bigint[]
+  pieceCids: string[]
+}
+
+export async function fetchAddPiecesEvent(
+  rpcUrl: string,
+  network: 'calibration' | 'mainnet',
+  dataSetId: number,
+  txHash: string
+): Promise<AddPiecesEvent | null> {
+  const client = clientFor(rpcUrl, network)
+  const chain = chainFor(network)
+  const receipt = await waitForTransactionReceipt(client, { hash: txHash as Hash })
+  const events = parseEventLogs({
+    abi: PDP_ABI,
+    eventName: 'PiecesAdded',
+    logs: receipt.logs,
+  })
+  const target = BigInt(dataSetId)
+  const match = events.find(
+    (ev) => ev.address.toLowerCase() === chain.contracts.pdp.address.toLowerCase() && ev.args.setId === target
+  )
+  if (match == null) return null
+  const pieceCids = match.args.pieceCids.map((p) => hexToPieceCID(p.data).toString())
+  return {
+    blockNumber: receipt.blockNumber,
+    pieceIds: [...match.args.pieceIds],
+    pieceCids,
   }
 }
 
