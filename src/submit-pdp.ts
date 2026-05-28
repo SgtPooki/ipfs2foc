@@ -67,7 +67,12 @@ export async function runSubmitPdp(db: MigrationDB, opts: SubmitPdpOptions): Pro
   let totalPullMs = 0
   let totalAddMs = 0
 
-  for (const agg of db.aggregates().filter((a) => a.status === 'planned')) {
+  // Resume any aggregate that has not yet been committed. Pull POSTs are idempotent
+  // by (sha256(extraData), dataSetId), so re-issuing on an already-parked aggregate
+  // returns complete fast, and the active-pieces guard skips an aggregate whose root
+  // is already on chain. A 'failed' aggregate is left for a manual reset.
+  const resumable = new Set<string>(['planned', 'submitted', 'parked'])
+  for (const agg of db.aggregates().filter((a) => resumable.has(a.status))) {
     if (db.inFlightUncommittedCount() >= opts.maxInFlight) {
       log(`in-flight cap reached (${opts.maxInFlight}); stopping`)
       break
