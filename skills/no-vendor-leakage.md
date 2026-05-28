@@ -14,12 +14,12 @@
 ### Bad
 
 ```ts
-// AcmeCorp's gateway returns 502 sometimes
-async function probeAcme(cid: string) { ... }
+// <vendor-product-name>'s gateway returns 502 sometimes
+async function probe<VendorProductName>(cid: string) { ... }
 ```
 
 ```md
-This tool migrates Dapper Labs assets off Pinata.
+This tool migrates <customer-name> assets off <pinning-provider-name>.
 ```
 
 ### Good

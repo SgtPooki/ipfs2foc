@@ -10,7 +10,7 @@ Source: ~/.claude/skills/github-writing/SKILL.md
 - No closing summary that repeats the body.
 - No symmetrical bullet lists that flatten every point to equal weight.
 - No headings for one-sentence sections. No bullet lists with only one item.
-- Em dashes are fine when natural. Never use the `X — not Y, but Z` construction.
+- Em dashes are fine when natural. Avoid the contrastive sandwich construction with em dashes (see Bad example below).
 
 ## Examples
 

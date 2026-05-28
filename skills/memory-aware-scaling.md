@@ -1,6 +1,6 @@
 # Memory-Aware Scaling
 
-**Trigger:** Writing code that operates over a per-asset or per-piece list.
+**Trigger:** Writing code that walks a per-asset or per-piece list that may grow to 100k+ rows at operator scale.
 
 ## Rule
 
@@ -20,14 +20,23 @@ const sample = pickN(allCids, 100)
 
 ### Good
 
+The shipped pattern in `src/report.ts:316-329` (`collectSample`) walks aggregates in order, tracks an absolute index, and only loads an aggregate's member list when at least one stride target lands inside that aggregate's range. Peak memory is `O(sample size) + O(one aggregate's member count)`, not `O(total)`.
+
 ```ts
-// see src/report.ts collectSample
-const total = db.prepare('SELECT COUNT(*) AS n FROM assets').get().n
-const step = total / sampleSize
-const sample: string[] = []
-for (let i = 0; i < sampleSize; i++) {
-  const offset = Math.floor(i * step)
-  sample.push(db.prepare('SELECT cid FROM assets LIMIT 1 OFFSET ?').get(offset).cid)
+// foc-migrate src/report.ts collectSample
+let absolute = 0
+let nextTarget = 0
+for (const agg of committedAggs) {
+  if (nextTarget >= targets.length) break
+  const end = absolute + agg.memberCount
+  if (targets[nextTarget] < end) {
+    const cids = db.aggregateAssetCids(agg.idx)  // only the matching aggregate
+    while (nextTarget < targets.length && targets[nextTarget] < end) {
+      out.push(cids[targets[nextTarget] - absolute])
+      nextTarget++
+    }
+  }
+  absolute = end
 }
 ```
 

@@ -8,6 +8,7 @@
 - Do not substitute IPFS gateway HEAD probes, SP-reported HTTP status, or log scraping for canonical truth.
 - Side-channel signals are supplementary at best; never let them flip a row to "verified".
 - For PDP membership use `getActivePieces`. For proof-of-possession use `getDataSetLastProvenEpoch`.
+- IPNI announcement checks (`/routing/v1/providers/{cid}`) and gateway HEAD probes are discoverability and liveness signals only. A failed IPNI lookup does not unverify a piece the chain says is committed; a passing IPNI lookup does not verify one the chain has not committed.
 
 ## Examples
 

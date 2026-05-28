@@ -6,7 +6,7 @@
 
 - Import ABIs, addresses, and helpers from the existing typed dependency.
 - Do not hand-roll ABI snippets, hex selectors, or contract address constants.
-- If the upstream export is missing, file an upstream issue before forking a local copy.
+- If the upstream export is missing: open an upstream issue if you can, otherwise note the gap in `.research/upstream-gaps.md` and use a minimal local shim that imports the upstream ABI rather than redefining it.
 - Check the package's subpath exports before writing wrappers.
 
 ## Examples

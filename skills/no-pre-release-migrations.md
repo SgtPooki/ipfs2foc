@@ -1,6 +1,6 @@
 # No Pre-Release Migrations
 
-**Trigger:** Adding a new SQL column or table to a pre-release project with no real users.
+**Trigger:** Adding SQL schema in this repo before the first user-facing tagged release.
 
 ## Rule
 

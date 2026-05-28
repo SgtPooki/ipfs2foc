@@ -1,13 +1,13 @@
 # Sample, Not Sweep, At Scale
 
-**Trigger:** Adding a verify or audit command that walks per-asset rows.
+**Trigger:** Adding a verify or audit command that walks per-asset rows whose count scales with operator input.
 
 ## Rule
 
 - Default to a stride sample. Gate the full sweep behind `--all`.
 - Use deterministic stride: `offset = floor(i * total / sampleSize)` for `i in 0..sampleSize-1`.
 - Print the sample size and stride so operators can reproduce the run.
-- Do not parallelize sampling beyond what the source gateway can serve.
+- Cap fan-out concurrency. Default 4; expose `--concurrency` for operators with headroom.
 
 ## Examples
 

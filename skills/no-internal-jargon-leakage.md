@@ -1,6 +1,6 @@
 # No Internal Jargon Leakage
 
-**Trigger:** Writing any user-facing doc that references a design decision.
+**Trigger:** Writing any user-facing surface (docs, README, code symbols, filenames, CLI flag names, help text, log strings) that names a design decision.
 
 ## Rule
 

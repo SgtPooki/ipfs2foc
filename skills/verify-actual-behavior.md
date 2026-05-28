@@ -1,13 +1,13 @@
 # Verify Actual Behavior
 
-**Trigger:** Writing code, docs, or claims that depend on how an external tool, library, contract, or API behaves.
+**Trigger:** Before asserting behavior of an external API, contract, library, or SDK that you have not opened in this session.
 
 ## Rule
 
 - Read the source or run the thing before stating how it behaves.
 - If the source is not available, write a probe script and observe the response shape.
-- Mark unverified claims as unverified in code comments and PR descriptions.
-- Confident-sounding wrong claims cost more than silence; prefer "I checked X at file:line" over recall.
+- Cite the file:line in a code comment next to the call: `// verified: <repo>/path/file.go:NNN`.
+- Mark unverified claims with a `// UNVERIFIED: ...` comment in code and a `_unverified_` note in PR descriptions. Do not paraphrase from recall.
 
 ## Examples
 
