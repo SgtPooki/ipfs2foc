@@ -13,10 +13,10 @@ importers:
         version: 17.0.0
       '@filoz/synapse-core':
         specifier: ^0.5.2
-        version: 0.5.2(viem@2.51.2(zod@4.4.3))
+        version: 0.5.2(typescript@6.0.3)(viem@2.51.2(typescript@6.0.3)(zod@4.4.3))
       '@filoz/synapse-sdk':
         specifier: ^0.41.0
-        version: 0.41.0(viem@2.51.2(zod@4.4.3))
+        version: 0.41.0(typescript@6.0.3)(viem@2.51.2(typescript@6.0.3)(zod@4.4.3))
       '@helia/block-brokers':
         specifier: ^5.2.4
         version: 5.2.4
@@ -49,7 +49,7 @@ importers:
         version: 6.1.4(react-native@0.85.3(@babel/core@7.29.7)(react@19.2.6))
       iso-filecoin:
         specifier: ^7.4.7
-        version: 7.4.7
+        version: 7.4.7(typescript@6.0.3)
       libp2p:
         specifier: ^3.3.2
         version: 3.3.2
@@ -58,7 +58,14 @@ importers:
         version: 13.4.2
       viem:
         specifier: ^2.21.0
-        version: 2.51.2(zod@4.4.3)
+        version: 2.51.2(typescript@6.0.3)(zod@4.4.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
 
 packages:
 
@@ -1920,6 +1927,11 @@ packages:
     resolution: {integrity: sha512-8ZiHFm91orbSAe2PSAiSVBVko18pbhbiB3U9GglSzF/zCGkR+rxpHx6sEMCUm4kxY4LjDIUGgCfUMtwfZfjfUA==}
     engines: {node: '>=20'}
 
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   uint8-varint@2.0.5:
     resolution: {integrity: sha512-jeFLbL/x30wBRnWjKE1qVBXeumG46r7XmYkpis955lTQ+blccGKFrOsSMHlxePwYB1pI7L8YPHz1t4jLxEs3nA==}
 
@@ -2247,26 +2259,26 @@ snapshots:
       '@leichtgewicht/ip-codec': 2.0.5
       utf8-codec: 1.0.0
 
-  '@filoz/synapse-core@0.5.2(viem@2.51.2(zod@4.4.3))':
+  '@filoz/synapse-core@0.5.2(typescript@6.0.3)(viem@2.51.2(typescript@6.0.3)(zod@4.4.3))':
     dependencies:
       '@web3-storage/data-segment': 5.3.0
       dnum: 2.17.0
       iso-web: 2.2.1
       multiformats: 13.4.2
-      ox: 0.14.25(zod@4.4.3)
+      ox: 0.14.25(typescript@6.0.3)(zod@4.4.3)
       p-locate: 7.0.0
       p-queue: 9.3.0
       p-some: 7.0.0
-      viem: 2.51.2(zod@4.4.3)
+      viem: 2.51.2(typescript@6.0.3)(zod@4.4.3)
       zod: 4.4.3
     transitivePeerDependencies:
       - typescript
 
-  '@filoz/synapse-sdk@0.41.0(viem@2.51.2(zod@4.4.3))':
+  '@filoz/synapse-sdk@0.41.0(typescript@6.0.3)(viem@2.51.2(typescript@6.0.3)(zod@4.4.3))':
     dependencies:
-      '@filoz/synapse-core': 0.5.2(viem@2.51.2(zod@4.4.3))
+      '@filoz/synapse-core': 0.5.2(typescript@6.0.3)(viem@2.51.2(typescript@6.0.3)(zod@4.4.3))
       multiformats: 13.4.2
-      viem: 2.51.2(zod@4.4.3)
+      viem: 2.51.2(typescript@6.0.3)(zod@4.4.3)
     transitivePeerDependencies:
       - typescript
 
@@ -3220,8 +3232,9 @@ snapshots:
       multiformats: 13.4.2
       sync-multihash-sha2: 1.0.0
 
-  abitype@1.2.3(zod@4.4.3):
+  abitype@1.2.3(typescript@6.0.3)(zod@4.4.3):
     optionalDependencies:
+      typescript: 6.0.3
       zod: 4.4.3
 
   abort-controller@3.0.0:
@@ -3868,7 +3881,7 @@ snapshots:
     dependencies:
       bigint-mod-arith: 3.3.1
 
-  iso-filecoin@7.4.7:
+  iso-filecoin@7.4.7(typescript@6.0.3):
     dependencies:
       '@ipld/dag-cbor': 9.2.7
       '@ledgerhq/errors': 6.35.0
@@ -3876,7 +3889,7 @@ snapshots:
       '@noble/hashes': 2.2.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(zod@4.4.3)
+      abitype: 1.2.3(typescript@6.0.3)(zod@4.4.3)
       bignumber.js: 9.3.1
       iso-base: 4.3.1
       iso-kv: 3.1.1
@@ -4399,7 +4412,7 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  ox@0.14.25(zod@4.4.3):
+  ox@0.14.25(typescript@6.0.3)(zod@4.4.3):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/ciphers': 1.3.0
@@ -4407,8 +4420,10 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(zod@4.4.3)
+      abitype: 1.2.3(typescript@6.0.3)(zod@4.4.3)
       eventemitter3: 5.0.1
+    optionalDependencies:
+      typescript: 6.0.3
     transitivePeerDependencies:
       - zod
 
@@ -4813,6 +4828,8 @@ snapshots:
     dependencies:
       tagged-tag: 1.0.0
 
+  typescript@6.0.3: {}
+
   uint8-varint@2.0.5:
     dependencies:
       uint8arraylist: 2.4.9
@@ -4865,16 +4882,18 @@ snapshots:
 
   varint@6.0.0: {}
 
-  viem@2.51.2(zod@4.4.3):
+  viem@2.51.2(typescript@6.0.3)(zod@4.4.3):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(zod@4.4.3)
+      abitype: 1.2.3(typescript@6.0.3)(zod@4.4.3)
       isows: 1.0.7(ws@8.20.1)
-      ox: 0.14.25(zod@4.4.3)
+      ox: 0.14.25(typescript@6.0.3)(zod@4.4.3)
       ws: 8.20.1
+    optionalDependencies:
+      typescript: 6.0.3
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
