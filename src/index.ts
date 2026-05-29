@@ -36,6 +36,7 @@ import { startCloudflaredTunnel } from './redirect-server-cloudflared.ts'
 import { runSubmitPdp } from './submit-pdp.ts'
 import { runReport } from './report.ts'
 import { runPlan } from './migrate.ts'
+import { runPackCars } from './pack-cars.ts'
 import { fetchAndComputePiece } from './piece.ts'
 import { stopHeliaFallback } from './helia-fallback.ts'
 import { Runner } from './runner.ts'
@@ -63,6 +64,9 @@ Usage:
                      (uses PRIVATE_KEY env)
   foc-migrate report --data-set-id <id> [--db <file>] [--network mainnet|calibration] [--json]
                      [--check-ipni <delegated-routing-url>] [--ipni-sample 100|--ipni-all] [--ipni-concurrency 8]
+  foc-migrate pack-cars --car-store <dir> [--db <file>] [--gateway URL]...
+                     [--pack-target-size 512MiB] [--fetch-concurrency 4]
+  foc-migrate reset-failed-aggregates [--db <file>] [--network mainnet|calibration]
   foc-migrate analyze [--cids <file>] [--db <file>] [--car-store <dir>] [--gateway URL]
                      [--sample 100|--all] [--probe-concurrency 8] [--bw-target URL]
                      [--network mainnet|calibration] [--json]
@@ -446,6 +450,57 @@ async function cmdGas(argv: string[]): Promise<void> {
   console.log(JSON.stringify({ rpcUrl, maxBaseFee: maxBaseFee.toString(), ...reading, baseFee: reading.baseFee.toString() }, null, 2))
 }
 
+async function cmdPackCars(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      db: { type: 'string', default: DEFAULT_DB },
+      gateway: { type: 'string', multiple: true },
+      'car-store': { type: 'string' },
+      'pack-target-size': { type: 'string', default: '512MiB' },
+      'fetch-concurrency': { type: 'string', default: '4' },
+    },
+  })
+  if (values['car-store'] == null) {
+    throw new Error('pack-cars requires --car-store <dir> (assembled CARs are persisted here)')
+  }
+  const targetSizeBytes = Number(parseSize(values['pack-target-size'] as string))
+  const db = new MigrationDB(values.db as string)
+  try {
+    const summary = await runPackCars(db, {
+      gateways: gatewaysFrom(values),
+      targetSizeBytes,
+      carStore: values['car-store'] as string,
+      fetchConcurrency: parsePositiveInt(values['fetch-concurrency'] as string, '--fetch-concurrency'),
+    })
+    console.log(JSON.stringify(summary, null, 2))
+  } finally {
+    db.close()
+  }
+}
+
+async function cmdResetFailedAggregates(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      db: { type: 'string', default: DEFAULT_DB },
+      network: { type: 'string', default: 'mainnet' },
+    },
+  })
+  const network = values.network as string
+  if (network !== 'mainnet' && network !== 'calibration') {
+    throw new Error(`unknown --network ${network} (expected mainnet|calibration)`)
+  }
+  const db = new MigrationDB(values.db as string)
+  try {
+    const changed = db.resetFailedAggregates()
+    log(`reset ${changed} failed aggregate(s) back to planned (network=${network})`)
+    console.log(JSON.stringify({ network, reset: changed }, null, 2))
+  } finally {
+    db.close()
+  }
+}
+
 async function cmdAnalyze(argv: string[]): Promise<void> {
   const { values } = parseArgs({
     args: argv,
@@ -563,6 +618,12 @@ async function main(): Promise<void> {
       break
     case 'report':
       await cmdReport(rest)
+      break
+    case 'pack-cars':
+      await cmdPackCars(rest)
+      break
+    case 'reset-failed-aggregates':
+      await cmdResetFailedAggregates(rest)
       break
     case 'analyze':
       await cmdAnalyze(rest)

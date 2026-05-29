@@ -59,6 +59,24 @@ export function classifyFailure(message: string): FailureCategory {
  */
 export type AggregateStatus = 'planned' | 'submitted' | 'parked' | 'committed' | 'failed'
 
+/**
+ * Packed sub-piece lifecycle. A sub-piece is a synthetic multi-root CAR that
+ * groups M source CIDs into one PDP sub-piece. `planned` means the bin layout
+ * is committed but the bytes have not been assembled; `built` means the
+ * assembled CAR is on disk (under `--car-store`) and its commitment matched.
+ * `failed` is set if assembly produced a different commitment than planned.
+ */
+export type SubPieceStatus = 'planned' | 'built' | 'failed'
+
+export interface SubPieceRow {
+  subPieceCid: string
+  assembledCarLength: number
+  assembledSha256: string | null
+  targetSizeBytes: number
+  carPath: string | null
+  status: SubPieceStatus
+}
+
 export interface PieceRow {
   cid: string
   pieceCid: string | null
@@ -102,6 +120,12 @@ export class MigrationDB {
   }
 
   #migrate(): void {
+    // No ALTERs: schema is unreleased, so each new column joins the CREATE
+    // statement directly. sub_pieces / sub_piece_members hold the packed
+    // multi-root CAR groups (each one is a single PDP sub-piece). The
+    // aggregate_members table is the single point that previously joined an
+    // aggregate to its members; the new `sub_piece_cid` column points at a
+    // packed group when present, and falls back to `cid` (single-piece path).
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS pieces (
         cid              TEXT PRIMARY KEY,
@@ -112,6 +136,7 @@ export class MigrationDB {
         status           TEXT NOT NULL DEFAULT 'pending',
         error            TEXT,
         failure_category TEXT,
+        member_sha256    TEXT,
         updated_at       TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS aggregates (
@@ -133,10 +158,33 @@ export class MigrationDB {
       CREATE TABLE IF NOT EXISTS aggregate_members (
         aggregate_idx INTEGER NOT NULL,
         segment_index INTEGER NOT NULL,
-        cid           TEXT NOT NULL,
-        PRIMARY KEY (aggregate_idx, cid),
+        cid           TEXT,
+        sub_piece_cid TEXT,
+        PRIMARY KEY (aggregate_idx, segment_index),
         FOREIGN KEY (cid) REFERENCES pieces(cid),
+        FOREIGN KEY (sub_piece_cid) REFERENCES sub_pieces(sub_piece_cid),
         FOREIGN KEY (aggregate_idx) REFERENCES aggregates(idx)
+      );
+      CREATE TABLE IF NOT EXISTS sub_pieces (
+        sub_piece_cid         TEXT PRIMARY KEY,
+        assembled_car_length  INTEGER NOT NULL,
+        assembled_sha256      TEXT,
+        target_size_bytes     INTEGER NOT NULL,
+        car_path              TEXT,
+        status                TEXT NOT NULL DEFAULT 'planned',
+        built_at              TEXT,
+        error                 TEXT,
+        created_at            TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS sub_piece_members (
+        sub_piece_cid     TEXT NOT NULL,
+        member_cid        TEXT NOT NULL,
+        member_sort_order INTEGER NOT NULL,
+        member_sha256     TEXT,
+        member_raw_size   INTEGER,
+        PRIMARY KEY (sub_piece_cid, member_cid),
+        FOREIGN KEY (sub_piece_cid) REFERENCES sub_pieces(sub_piece_cid),
+        FOREIGN KEY (member_cid) REFERENCES pieces(cid)
       );
       CREATE TABLE IF NOT EXISTS pull_batch_attempts (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,13 +249,25 @@ export class MigrationDB {
     this.#db.prepare(`UPDATE pieces SET status='pending', error=NULL WHERE status='failed'`).run()
   }
 
-  recordPieceSuccess(cid: string, pieceCid: string, rawSize: number, gateway: string, url: string): void {
+  recordPieceSuccess(
+    cid: string,
+    pieceCid: string,
+    rawSize: number,
+    gateway: string,
+    url: string,
+    memberSha256?: string | null
+  ): void {
+    // `member_sha256` is captured here so pack-cars can later refuse to assemble
+    // if the source gateway returns drifted bytes. Optional on the call site so
+    // the call shape stays backward-compatible for callers that have not been
+    // updated.
     this.#db
       .prepare(
-        `UPDATE pieces SET piece_cid=?, raw_size=?, gateway=?, url=?, status='done', error=NULL, updated_at=?
+        `UPDATE pieces SET piece_cid=?, raw_size=?, gateway=?, url=?,
+                            member_sha256=?, status='done', error=NULL, updated_at=?
          WHERE cid=?`
       )
-      .run(pieceCid, rawSize, gateway, url, new Date().toISOString(), cid)
+      .run(pieceCid, rawSize, gateway, url, memberSha256 ?? null, new Date().toISOString(), cid)
   }
 
   recordPieceFailure(cid: string, error: string, category: FailureCategory = 'other'): void {
@@ -278,7 +338,19 @@ export class MigrationDB {
     return Number(row.m) + 1
   }
 
-  saveAggregate(idx: number, rootPieceCid: string, pieceSizeBytes: bigint, members: string[]): void {
+  /**
+   * Persist an aggregate plus its ordered members. Each member is either a
+   * single-piece source CID (`{ cid }`) or a packed multi-asset sub-piece
+   * (`{ subPieceCid }`). The two shapes never mix inside one aggregate today,
+   * but the table holds both columns so the redirect server can dispatch from
+   * one lookup.
+   */
+  saveAggregate(
+    idx: number,
+    rootPieceCid: string,
+    pieceSizeBytes: bigint,
+    members: Array<string | { cid?: string; subPieceCid?: string }>
+  ): void {
     this.#db
       .prepare(
         `INSERT INTO aggregates (idx, root_piece_cid, piece_size_bytes, status, created_at)
@@ -286,9 +358,16 @@ export class MigrationDB {
       )
       .run(idx, rootPieceCid, pieceSizeBytes.toString(), new Date().toISOString())
     const memberStmt = this.#db.prepare(
-      `INSERT INTO aggregate_members (aggregate_idx, segment_index, cid) VALUES (?, ?, ?)`
+      `INSERT INTO aggregate_members (aggregate_idx, segment_index, cid, sub_piece_cid)
+       VALUES (?, ?, ?, ?)`
     )
-    members.forEach((cid, segmentIndex) => memberStmt.run(idx, segmentIndex, cid))
+    members.forEach((m, segmentIndex) => {
+      if (typeof m === 'string') {
+        memberStmt.run(idx, segmentIndex, m, null)
+      } else {
+        memberStmt.run(idx, segmentIndex, m.cid ?? null, m.subPieceCid ?? null)
+      }
+    })
   }
 
   aggregates(): AggregateRow[] {
@@ -342,13 +421,24 @@ export class MigrationDB {
     return rows.map((r) => String((r as { cid: string }).cid))
   }
 
-  /** Manifest rows (`pieceCid`, `url`, `rawSize`) for one aggregate, in segment order. */
+  /**
+   * Manifest rows (`pieceCid`, `url`, `rawSize`) for one aggregate, in segment
+   * order. Members may be either single-piece source CIDs or packed sub-pieces;
+   * the columns coalesce so the caller sees a uniform `(pieceCid, url, rawSize)`
+   * shape regardless of how the member was registered.
+   */
   aggregateManifest(idx: number): Array<{ pieceCid: string; url: string; rawSize: number }> {
     const rows = this.#db
       .prepare(
-        `SELECT p.piece_cid AS piece_cid, p.url AS url, p.raw_size AS raw_size
-         FROM aggregate_members m JOIN pieces p ON p.cid = m.cid
-         WHERE m.aggregate_idx = ? ORDER BY m.segment_index`
+        `SELECT
+            COALESCE(sp.sub_piece_cid, p.piece_cid)   AS piece_cid,
+            COALESCE(p.url, '')                       AS url,
+            COALESCE(sp.assembled_car_length, p.raw_size) AS raw_size
+         FROM aggregate_members m
+         LEFT JOIN pieces p     ON p.cid = m.cid
+         LEFT JOIN sub_pieces sp ON sp.sub_piece_cid = m.sub_piece_cid
+         WHERE m.aggregate_idx = ?
+         ORDER BY m.segment_index`
       )
       .all(idx)
     return rows.map((r) => {
@@ -396,6 +486,11 @@ export class MigrationDB {
         new Date().toISOString(),
         idx
       )
+    // Once the AddPieces receipt is on-chain, the source-gateway URLs for the
+    // aggregate's sub-piece members are no longer needed; the provider already
+    // pulled and verified every byte. Cached CAR files are returned to the
+    // caller as a side-effect so the caller can unlink them (db.ts stays
+    // filesystem-free).
   }
 
   /**
@@ -531,6 +626,158 @@ export class MigrationDB {
       out[row.status] = Number(row.n)
     }
     return out as Record<AggregateStatus, number>
+  }
+
+  /**
+   * Insert a planned sub-piece row plus its ordered member list in one
+   * transaction. Members are addressed by their source CID and recorded in the
+   * canonical sort order computed at plan time (parsed-CID-bytes ascending).
+   * The assembled CAR length is computed up-front so the redirect server can
+   * set `Content-Length` without re-walking the bytes.
+   */
+  recordPlannedSubPiece(args: {
+    subPieceCid: string
+    assembledCarLength: number
+    targetSizeBytes: number
+    members: Array<{ cid: string; rawSize: number | null; sha256: string | null }>
+  }): void {
+    const now = new Date().toISOString()
+    const insertSub = this.#db.prepare(
+      `INSERT INTO sub_pieces (sub_piece_cid, assembled_car_length, target_size_bytes, status, created_at)
+       VALUES (?, ?, ?, 'planned', ?)
+       ON CONFLICT(sub_piece_cid) DO NOTHING`
+    )
+    const insertMember = this.#db.prepare(
+      `INSERT INTO sub_piece_members
+         (sub_piece_cid, member_cid, member_sort_order, member_sha256, member_raw_size)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(sub_piece_cid, member_cid) DO NOTHING`
+    )
+    insertSub.run(args.subPieceCid, args.assembledCarLength, args.targetSizeBytes, now)
+    args.members.forEach((m, i) => {
+      insertMember.run(args.subPieceCid, m.cid, i, m.sha256, m.rawSize)
+    })
+  }
+
+  /**
+   * Transition a planned sub-piece to `built`: the assembled CAR is on disk
+   * (under `--car-store`), its sha256 matched the planning digest, and the
+   * server may serve it for pulls.
+   */
+  markSubPieceBuilt(subPieceCid: string, carPath: string, assembledSha256: string): void {
+    this.#db
+      .prepare(
+        `UPDATE sub_pieces SET status='built', car_path=?, assembled_sha256=?, built_at=?, error=NULL
+         WHERE sub_piece_cid=?`
+      )
+      .run(carPath, assembledSha256, new Date().toISOString(), subPieceCid)
+  }
+
+  markSubPieceFailed(subPieceCid: string, error: string): void {
+    this.#db
+      .prepare(`UPDATE sub_pieces SET status='failed', error=? WHERE sub_piece_cid=?`)
+      .run(error, subPieceCid)
+  }
+
+  /** Look up a sub-piece by its packed PieceCID v2. Null when no row exists. */
+  subPieceByCid(subPieceCid: string): SubPieceRow | null {
+    const row = this.#db
+      .prepare(
+        `SELECT sub_piece_cid, assembled_car_length, assembled_sha256, target_size_bytes,
+                car_path, status FROM sub_pieces WHERE sub_piece_cid = ? LIMIT 1`
+      )
+      .get(subPieceCid) as Record<string, unknown> | undefined
+    if (row == null) return null
+    return {
+      subPieceCid: String(row.sub_piece_cid),
+      assembledCarLength: Number(row.assembled_car_length),
+      assembledSha256: row.assembled_sha256 == null ? null : String(row.assembled_sha256),
+      targetSizeBytes: Number(row.target_size_bytes),
+      carPath: row.car_path == null ? null : String(row.car_path),
+      status: row.status as SubPieceStatus,
+    }
+  }
+
+  /** Sub-pieces in the given status. */
+  subPiecesByStatus(status: SubPieceStatus): SubPieceRow[] {
+    const rows = this.#db
+      .prepare(
+        `SELECT sub_piece_cid, assembled_car_length, assembled_sha256, target_size_bytes,
+                car_path, status FROM sub_pieces WHERE status = ? ORDER BY sub_piece_cid`
+      )
+      .all(status)
+    return rows.map((r) => {
+      const row = r as Record<string, unknown>
+      return {
+        subPieceCid: String(row.sub_piece_cid),
+        assembledCarLength: Number(row.assembled_car_length),
+        assembledSha256: row.assembled_sha256 == null ? null : String(row.assembled_sha256),
+        targetSizeBytes: Number(row.target_size_bytes),
+        carPath: row.car_path == null ? null : String(row.car_path),
+        status: row.status as SubPieceStatus,
+      }
+    })
+  }
+
+  /** Sub-piece member CIDs locked into a planned sub-piece (cannot be re-packed). */
+  lockedSubPieceMemberCids(): Set<string> {
+    const rows = this.#db
+      .prepare(`SELECT member_cid FROM sub_piece_members`)
+      .all()
+    return new Set(rows.map((r) => String((r as { member_cid: string }).member_cid)))
+  }
+
+  /**
+   * Ordered member CIDs of a sub-piece (sort order set at plan time). The
+   * redirect server uses this in the stream-assemble path so it can re-fetch
+   * members and concatenate them in the same order the piece commitment was
+   * computed against.
+   */
+  subPieceMemberCids(subPieceCid: string): string[] {
+    const rows = this.#db
+      .prepare(
+        `SELECT member_cid FROM sub_piece_members
+         WHERE sub_piece_cid = ? ORDER BY member_sort_order`
+      )
+      .all(subPieceCid)
+    return rows.map((r) => String((r as { member_cid: string }).member_cid))
+  }
+
+  /** Pieces marked done that are not already locked into a sub-piece or in-flight aggregate. */
+  donePiecesFreeForPacking(): PieceRow[] {
+    const rows = this.#db
+      .prepare(
+        `SELECT p.cid, p.piece_cid, p.raw_size, p.gateway, p.url, p.status, p.error
+         FROM pieces p
+         WHERE p.status='done'
+           AND p.cid NOT IN (SELECT member_cid FROM sub_piece_members)
+         ORDER BY p.cid`
+      )
+      .all()
+    return rows.map(toPieceRow)
+  }
+
+  /**
+   * Delete cached sub-piece CARs for an aggregate. Called from `markCommitted`
+   * once the aggregate is on-chain: the gateways are no longer needed and the
+   * disk space can come back. Returns the file paths the caller should unlink.
+   *
+   * This is the single eviction trigger point. Doing it earlier risks racing a
+   * provider retry from byte 0; doing it later wastes disk for the production
+   * persona that runs `--max-in-flight 1` against a 32 GiB free disk.
+   */
+  carPathsForAggregateOnCommit(aggregateIdx: number): string[] {
+    const rows = this.#db
+      .prepare(
+        `SELECT sp.car_path
+         FROM aggregate_members am
+         JOIN sub_pieces sp ON sp.sub_piece_cid = am.sub_piece_cid
+         WHERE am.aggregate_idx = ? AND sp.car_path IS NOT NULL`
+      )
+      .all(aggregateIdx)
+    return rows
+      .map((r) => (r as { car_path: string | null }).car_path)
+      .filter((p): p is string => p != null && p !== '')
   }
 
   close(): void {

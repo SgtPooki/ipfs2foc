@@ -133,7 +133,7 @@ export class Runner {
         ipfsFallback: this.#ipfsFallback,
         fallbackTimeoutMs: this.#fallbackTimeoutMs,
       })
-      this.#db.recordPieceSuccess(cid, piece.pieceCid, piece.rawSize, piece.gateway, piece.url)
+      this.#db.recordPieceSuccess(cid, piece.pieceCid, piece.rawSize, piece.gateway, piece.url, piece.memberSha256)
       log(`  + ${cid} -> ${piece.pieceCid}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
