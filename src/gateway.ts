@@ -38,13 +38,16 @@ export const DEFAULT_GATEWAYS = ['https://gateway.pinata.cloud', 'https://trustl
 export const CAR_ACCEPT = 'application/vnd.ipld.car'
 
 /**
- * Build the canonical trustless-CAR URL for a CID. `dag-scope=all` requests the
- * full DAG; `dups=n` (the gateway default) keeps the CAR free of duplicate
- * blocks. These params are pinned so the bytes are reproducible across fetches.
+ * Build the canonical trustless-CAR URL for a CID. The query string pins every
+ * variable the trustless-gateway spec exposes so byte output is reproducible
+ * across fetches and gateways: full DAG scope, CAR v1 framing, depth-first
+ * traversal order, no duplicate blocks. Without these, gateway defaults vary
+ * (some emit CAR v2; some accept dup blocks), and the recomputed PieceCID will
+ * diverge between plan and the provider's pull.
  */
 export function buildCarUrl(gateway: string, cid: string): string {
   const base = gateway.replace(/\/+$/, '')
-  return `${base}/ipfs/${cid}?format=car&dag-scope=all`
+  return `${base}/ipfs/${cid}?format=car&dag-scope=all&car-version=1&car-order=dfs&car-dups=n`
 }
 
 /** Fetch a CID as a CAR stream. Throws on non-2xx or a non-CAR content-type. */
