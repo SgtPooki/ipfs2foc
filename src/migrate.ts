@@ -46,7 +46,7 @@ export async function runPlan(db: MigrationDB, opts: PlanOptions): Promise<PlanS
       })
       const elapsed = timer.stop()
       stats.record(piece.rawSize, elapsed)
-      db.recordPieceSuccess(cid, piece.pieceCid, piece.rawSize, piece.gateway, piece.url)
+      db.recordPieceSuccess(cid, piece.pieceCid, piece.rawSize, piece.gateway, piece.url, piece.memberSha256)
       log(`  + ${cid} -> ${piece.pieceCid} (${piece.rawSize} bytes via ${piece.gateway}, ${Math.round(elapsed)}ms)`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
