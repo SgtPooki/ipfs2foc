@@ -26,7 +26,26 @@ import { formatBytes, formatDuration, formatRate, Timer } from './metrics.ts'
 import { PdpClient, PullBackpressure, type PullResponse } from './pdp.ts'
 import { activePieceCids, fetchAddPiecesEvent } from './pdp-verifier.ts'
 import { pieceAggregateCommP } from './piece-aggregate.ts'
+import { unlink } from 'node:fs/promises'
 import { log } from './util.ts'
+
+/**
+ * Evict cached multi-asset CAR files for an aggregate once it has been
+ * committed on-chain. The provider has parked and verified every byte; the
+ * gateways are no longer needed; disk can come back. Errors are logged but
+ * never thrown — eviction is best-effort and never blocks the run.
+ */
+async function evictCachedCars(db: MigrationDB, aggregateIdx: number): Promise<void> {
+  const paths = db.carPathsForAggregateOnCommit(aggregateIdx)
+  for (const path of paths) {
+    try {
+      await unlink(path)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log(`  evict ${path}: ${message}`)
+    }
+  }
+}
 
 export interface SubmitPdpOptions {
   privateKey: Hex
@@ -228,6 +247,7 @@ export async function runSubmitPdp(db: MigrationDB, opts: SubmitPdpOptions): Pro
           pieceId: eventPieceId,
           committedBlock: event.blockNumber.toString(),
         })
+        await evictCachedCars(db, agg.idx)
         log(
           `aggregate ${agg.idx}: committed in ${formatDuration(addMs)} ` +
             `(data set ${opts.dataSetId}, tx ${txHash}, block ${event.blockNumber}, pieceId ${eventPieceId})`
@@ -244,6 +264,7 @@ export async function runSubmitPdp(db: MigrationDB, opts: SubmitPdpOptions): Pro
           pieceId,
           reason,
         })
+        await evictCachedCars(db, agg.idx)
         log(`aggregate ${agg.idx}: committed unverified (tx ${txHash}) — ${reason}`)
       }
       totalAddMs += addMs

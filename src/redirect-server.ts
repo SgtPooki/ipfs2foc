@@ -13,8 +13,11 @@
  * this server only needs to be reachable by the provider.
  */
 
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { MigrationDB } from './db.ts'
+import { CAR_ACCEPT } from './gateway.ts'
 import { log } from './util.ts'
 
 const PIECE_PATH = /^\/piece\/([^/]+)$/
@@ -22,6 +25,16 @@ const PIECE_PATH = /^\/piece\/([^/]+)$/
 /**
  * Shared request handler. Used by the plain Funnel/VPS path here and by any
  * other ingress that exposes its own HTTPS surface (e.g. cloudflared).
+ *
+ * Two dispatch paths:
+ *   - The piece commitment matches a packed multi-asset sub-piece: stream the
+ *     assembled CAR from `--car-store` with `Content-Length` set. Plain 200
+ *     OK; no Range header; no auth. Curio's pull client expects this shape
+ *     (`pdp/handlers_pull.go`).
+ *   - The piece commitment matches a single source CID: 302 to the gateway
+ *     CAR (the path the migrator has always taken). The provider's pull
+ *     follows the cross-origin redirect and downloads from the gateway
+ *     directly.
  */
 export function makeRedirectHandler(db: MigrationDB): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
@@ -42,6 +55,24 @@ export function makeRedirectHandler(db: MigrationDB): (req: IncomingMessage, res
     }
 
     const pieceCid = match[1]
+
+    // Packed multi-asset sub-piece path. Built rows have an assembled CAR on
+    // disk; planned/failed rows are not yet serveable.
+    const subPiece = db.subPieceByCid(pieceCid)
+    if (subPiece != null) {
+      if (subPiece.status !== 'built' || subPiece.carPath == null) {
+        res.writeHead(404, { 'content-type': 'text/plain' })
+        res.end('sub-piece not built')
+        return
+      }
+      serveAssembledCar(res, subPiece.carPath, subPiece.assembledCarLength).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err)
+        log(`serve ${pieceCid}: ${message}`)
+      })
+      return
+    }
+
+    // Single-piece path: 302 to the upstream gateway CAR.
     const target = db.pieceUrlByPieceCid(pieceCid)
     if (target == null) {
       res.writeHead(404, { 'content-type': 'text/plain' })
@@ -54,6 +85,37 @@ export function makeRedirectHandler(db: MigrationDB): (req: IncomingMessage, res
     res.writeHead(302, { location: target, 'cache-control': 'no-store' })
     res.end()
   }
+}
+
+/**
+ * Stream the assembled CAR file with the headers the provider's pull expects:
+ * `Content-Length` set up-front (used as `resp.ContentLength > group.PieceRawSize`
+ * in `task_pull_piece.go:1002`), plain CAR content type, no `Accept-Ranges`.
+ * `stat` is used to confirm the on-disk length matches the planned length —
+ * otherwise the pull would proceed against a truncated file.
+ */
+async function serveAssembledCar(res: ServerResponse, filePath: string, expectedLength: number): Promise<void> {
+  const stats = await stat(filePath).catch(() => null)
+  if (stats == null) {
+    res.writeHead(404, { 'content-type': 'text/plain' })
+    res.end('assembled car missing')
+    return
+  }
+  if (stats.size !== expectedLength) {
+    res.writeHead(500, { 'content-type': 'text/plain' })
+    res.end(`assembled car length drift: expected ${expectedLength}, on disk ${stats.size}`)
+    return
+  }
+  res.writeHead(200, {
+    'content-type': CAR_ACCEPT,
+    'content-length': String(expectedLength),
+    'cache-control': 'no-store',
+  })
+  const body = createReadStream(filePath)
+  body.on('error', () => {
+    if (!res.writableEnded) res.end()
+  })
+  body.pipe(res)
 }
 
 export function startRedirectServer(db: MigrationDB, port: number): void {
