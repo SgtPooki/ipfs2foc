@@ -32,6 +32,25 @@ function categoryForStatus(status: number): FailureCategory {
   return 'other'
 }
 
+function categoryForFetchError(err: unknown): FailureCategory {
+  // node:fetch wraps transport errors in a TypeError whose `cause` carries the
+  // node:net / dns / undici code. The signal-aborted case surfaces as a
+  // DOMException with name='AbortError'. Walk the chain rather than grep the
+  // message string.
+  const seen = new Set<unknown>()
+  let cur: unknown = err
+  while (cur != null && !seen.has(cur)) {
+    seen.add(cur)
+    const name = (cur as { name?: string }).name
+    if (name === 'AbortError' || name === 'TimeoutError') return 'source_gateway_timeout'
+    const code = (cur as { code?: string }).code
+    if (code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'UND_ERR_HEADERS_TIMEOUT' || code === 'UND_ERR_BODY_TIMEOUT') return 'source_gateway_timeout'
+    if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'EHOSTUNREACH' || code === 'ENETUNREACH' || code === 'ENOTFOUND' || code === 'EAI_AGAIN' || code === 'UND_ERR_SOCKET') return 'source_gateway_network'
+    cur = (cur as { cause?: unknown }).cause
+  }
+  return 'source_gateway_network'
+}
+
 /** Gateways that are known to serve deterministic, spec-compliant trustless CARs. */
 export const DEFAULT_GATEWAYS = ['https://gateway.pinata.cloud', 'https://trustless-gateway.link']
 
@@ -61,11 +80,10 @@ export async function fetchCar(
   try {
     res = await fetch(url, { headers: { accept: CAR_ACCEPT }, signal })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const isTimeout = /timeout|timed out|ETIMEDOUT|AbortError/i.test(message)
-    throw new GatewayError(`gateway ${gateway} fetch failed for ${cid}: ${message}`, {
-      category: isTimeout ? 'source_gateway_timeout' : 'other',
-    })
+    throw new GatewayError(
+      `gateway ${gateway} fetch failed for ${cid}: ${err instanceof Error ? err.message : String(err)}`,
+      { category: categoryForFetchError(err) }
+    )
   }
   if (!res.ok) {
     throw new GatewayError(`gateway ${gateway} returned HTTP ${res.status} for ${cid}`, {

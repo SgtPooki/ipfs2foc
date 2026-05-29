@@ -18,6 +18,7 @@ export type PieceStatus = 'pending' | 'processing' | 'done' | 'failed' | 'oversi
 export type FailureCategory =
   | 'source_gateway_429'
   | 'source_gateway_5xx'
+  | 'source_gateway_network'
   | 'source_gateway_timeout'
   | 'car_root_mismatch'
   | 'commp_mismatch'

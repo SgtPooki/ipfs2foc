@@ -71,6 +71,7 @@ function shouldFallback(category: FailureCategory): boolean {
     category === 'source_gateway_5xx' ||
     category === 'source_gateway_429' ||
     category === 'source_gateway_timeout' ||
+    category === 'source_gateway_network' ||
     category === 'car_root_mismatch'
   )
 }
