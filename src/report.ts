@@ -88,12 +88,34 @@ export interface Report {
   failuresByCategory: Record<string, number>
   aggregates: AggregateReport[]
   discrepancies: string[]
+  /** Piece CIDs present on chain for this data set that no local aggregate root matches. Populated when the local DB has been lost or never ran a plan for these pieces. */
+  unaccountedOnChain: string[]
   /** On-chain proof-of-possession health for the data set. */
   proof: ProofHealth
   /** Optional IPNI announcement sample, set only when `--check-ipni` is passed. */
   ipni?: IpniCheck
   /** True when every input CID is accounted for AND on-chain proof shows the SP has proven possession since the latest AddPieces. */
   complete: boolean
+}
+
+/**
+ * JSON.stringify replacer that turns bigint values into decimal strings.
+ * `Report` contains epoch counters and other chain-side values as bigints; the
+ * default `JSON.stringify` throws on them.
+ */
+export function bigintJsonReplacer(_key: string, value: unknown): unknown {
+  return typeof value === 'bigint' ? value.toString() : value
+}
+
+/**
+ * Chain-side roots that no local aggregate accounted for. The operator may have
+ * lost the DB, or a prior run committed pieces under a different DB file. The
+ * `report` CLI treats a non-empty result as a hard error unless
+ * `--allow-unaccounted` is set.
+ */
+export function findUnaccountedOnChain(onChain: Set<string>, localRoots: string[]): string[] {
+  const local = new Set(localRoots)
+  return [...onChain].filter((r) => !local.has(r))
 }
 
 export async function runReport(db: MigrationDB, opts: ReportOptions): Promise<Report> {
@@ -152,6 +174,11 @@ export async function runReport(db: MigrationDB, opts: ReportOptions): Promise<R
   const maxAddEpoch = await maxBlockOfTxHashes(rpcUrl, opts.network, committedTxHashes)
   const proof = await dataSetProofHealth(rpcUrl, opts.network, opts.dataSetId, maxAddEpoch)
 
+  const unaccountedOnChain = findUnaccountedOnChain(
+    onChainRoots,
+    aggregates.map((a) => a.root)
+  )
+
   const report: Report = {
     dataSetId: opts.dataSetId,
     network: opts.network,
@@ -166,11 +193,13 @@ export async function runReport(db: MigrationDB, opts: ReportOptions): Promise<R
     failuresByCategory: db.failuresByCategory(),
     aggregates,
     discrepancies,
+    unaccountedOnChain,
     proof,
     complete:
       unaccounted === 0 &&
       pendingNotCommitted === 0 &&
       counts.failed === 0 &&
+      unaccountedOnChain.length === 0 &&
       proof.provenSinceAdd &&
       proof.inGoodStanding,
   }

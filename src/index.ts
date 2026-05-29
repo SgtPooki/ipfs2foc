@@ -34,7 +34,7 @@ import { explorerBase } from './pdp-verifier.ts'
 import { startRedirectServer } from './redirect-server.ts'
 import { startCloudflaredTunnel } from './redirect-server-cloudflared.ts'
 import { runSubmitPdp } from './submit-pdp.ts'
-import { runReport } from './report.ts'
+import { runReport, bigintJsonReplacer } from './report.ts'
 import { runPlan } from './migrate.ts'
 import { runPackCars } from './pack-cars.ts'
 import { fetchAndComputePiece } from './piece.ts'
@@ -285,6 +285,7 @@ async function cmdReport(argv: string[]): Promise<void> {
       'ipni-all': { type: 'boolean', default: false },
       'ipni-concurrency': { type: 'string', default: '8' },
       json: { type: 'boolean', default: false },
+      'allow-unaccounted': { type: 'boolean', default: false },
     },
   })
   if (values['data-set-id'] == null) {
@@ -305,7 +306,15 @@ async function cmdReport(argv: string[]): Promise<void> {
       ipniConcurrency: parsePositiveInt(values['ipni-concurrency'] as string, '--ipni-concurrency'),
     })
     if (values.json) {
-      console.log(JSON.stringify(report, null, 2))
+      console.log(JSON.stringify(report, bigintJsonReplacer, 2))
+    }
+    if (report.unaccountedOnChain.length > 0) {
+      log(
+        `error: ${report.unaccountedOnChain.length} piece(s) on chain are not tracked in the local DB ` +
+          `(first: ${report.unaccountedOnChain[0]})` +
+          (values['allow-unaccounted'] === true ? ' — continuing because --allow-unaccounted is set' : '')
+      )
+      if (values['allow-unaccounted'] !== true) process.exitCode = 1
     }
     // Non-zero exit when the input accounting does not close. Operators wiring
     // `report` into CI / a final gate get a hard signal that the migration is
@@ -315,7 +324,7 @@ async function cmdReport(argv: string[]): Promise<void> {
       process.exitCode = 1
     } else if (!report.complete) {
       // Pending or failed CIDs remain; not an error, but signal incomplete.
-      process.exitCode = 2
+      process.exitCode = process.exitCode ?? 2
     }
     if (!report.proof.live) {
       log(`error: data set ${report.dataSetId} is not live on chain`)
