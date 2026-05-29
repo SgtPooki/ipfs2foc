@@ -99,3 +99,57 @@ export function repackPlanned(db: MigrationDB, aggregateSizeBytes: bigint): stri
   log(`Packed ${free.length} piece(s) into ${aggregates.length} planned aggregate(s).`)
   return oversizedCids
 }
+
+/**
+ * After `pack-cars` builds sub-pieces, rebuild `planned` aggregates so their
+ * members reference the packed sub-pieces instead of the original source CIDs.
+ * Each unit (built sub-piece or still-free single-asset piece) becomes one
+ * member; binning is by raw size against `aggregateSizeBytes`. Only planned
+ * aggregates are replaced — submitted/parked/committed compositions are frozen.
+ */
+export function repackAfterPackCars(db: MigrationDB, aggregateSizeBytes: bigint): void {
+  const subPieces = db.subPiecesByStatus('built')
+  const free = db.donePiecesFreeForPacking()
+
+  type Unit = { pieceCid: string; rawSize: number; cid: string; gateway: string; url: string; isSubPiece: boolean }
+  const units: Unit[] = [
+    ...subPieces.map((sp) => ({
+      pieceCid: sp.subPieceCid,
+      rawSize: sp.assembledCarLength,
+      cid: sp.subPieceCid,
+      gateway: '',
+      url: '',
+      isSubPiece: true,
+    })),
+    ...free.map((p) => ({
+      pieceCid: p.pieceCid ?? '',
+      rawSize: p.rawSize ?? 0,
+      cid: p.cid,
+      gateway: p.gateway ?? '',
+      url: p.url ?? '',
+      isSubPiece: false,
+    })),
+  ]
+
+  const { aggregates, oversized } = packAggregates(units, aggregateSizeBytes)
+
+  db.deletePlannedAggregates()
+  const base = db.nextAggregateIndex()
+  const subPieceSet = new Set(subPieces.map((s) => s.subPieceCid))
+  aggregates.forEach((agg, i) => {
+    db.saveAggregate(
+      base + i,
+      agg.rootPieceCid,
+      aggregateSizeBytes,
+      agg.members.map((m) => (subPieceSet.has(m.cid) ? { subPieceCid: m.cid } : { cid: m.cid }))
+    )
+  })
+
+  const oversizedCids = oversized.filter((u) => !subPieceSet.has(u.cid)).map((u) => u.cid)
+  db.markOversized(oversizedCids)
+
+  log(
+    `Repacked ${subPieces.length} sub-piece(s) + ${free.length} single-asset piece(s) ` +
+      `into ${aggregates.length} planned aggregate(s).`
+  )
+}

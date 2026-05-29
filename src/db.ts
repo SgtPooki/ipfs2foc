@@ -377,12 +377,23 @@ export class MigrationDB {
   }
 
   aggregates(): AggregateRow[] {
+    // `member_count` is the *source-CID* count, expanding packed sub-pieces
+    // through `sub_piece_members`. A 48-CID packed aggregate reports 48, not
+    // 1, so operator-facing counters (report, status) reflect input shape.
     const rows = this.#db
       .prepare(
         `SELECT a.idx, a.root_piece_cid, a.piece_size_bytes, a.status, a.pull_id,
                 a.data_set_id, a.piece_id, a.tx_hash, a.committed_block, a.error,
                 a.submitted_at, a.parked_at, a.committed_at,
-                (SELECT COUNT(*) FROM aggregate_members m WHERE m.aggregate_idx = a.idx) AS member_count
+                (
+                  SELECT COALESCE(SUM(
+                    CASE WHEN m.cid IS NOT NULL THEN 1
+                         ELSE (SELECT COUNT(*) FROM sub_piece_members spm
+                               WHERE spm.sub_piece_cid = m.sub_piece_cid)
+                    END
+                  ), 0)
+                  FROM aggregate_members m WHERE m.aggregate_idx = a.idx
+                ) AS member_count
          FROM aggregates a ORDER BY a.idx`
       )
       .all()
@@ -419,12 +430,27 @@ export class MigrationDB {
     return row?.url ?? null
   }
 
-  /** Asset CIDs (input list) belonging to one aggregate, in segment order. */
+  /**
+   * Asset CIDs (input list) belonging to one aggregate. Walks `sub_piece_members`
+   * for members that point at a sub-piece, so the returned list is the
+   * **source** CID set regardless of how the aggregate was packed.
+   */
   aggregateAssetCids(idx: number): string[] {
     const rows = this.#db
-      .prepare(`SELECT cid FROM aggregate_members WHERE aggregate_idx = ? ORDER BY segment_index`)
-      .all(idx)
-    return rows.map((r) => String((r as { cid: string }).cid))
+      .prepare(
+        `SELECT COALESCE(m.cid, spm.member_cid) AS asset_cid
+         FROM aggregate_members m
+         LEFT JOIN sub_piece_members spm ON spm.sub_piece_cid = m.sub_piece_cid
+         WHERE m.aggregate_idx = ?
+         ORDER BY m.segment_index, spm.member_sort_order`
+      )
+      .all(idx) as Array<{ asset_cid: string | null }>
+    return rows.map((r) => String(r.asset_cid)).filter((c) => c !== 'null')
+  }
+
+  /** Number of source-CID assets in one aggregate (expands sub-pieces). */
+  aggregateAssetCount(idx: number): number {
+    return this.aggregateAssetCids(idx).length
   }
 
   /**
@@ -703,6 +729,50 @@ export class MigrationDB {
       .run(error, subPieceCid)
   }
 
+  /**
+   * Insert a sub-piece row in `built` status together with its member rows in
+   * one transaction. Replaces the historic `recordPlannedSubPiece` +
+   * `markSubPieceBuilt` pair, which were two separate statements masquerading
+   * as atomic — a crash between them stranded the sub-piece (members locked,
+   * row stuck `planned`, no recovery pass).
+   */
+  recordBuiltSubPiece(args: {
+    subPieceCid: string
+    assembledCarLength: number
+    targetSizeBytes: number
+    carPath: string
+    assembledSha256: string
+    members: Array<{ cid: string; rawSize: number | null; sha256: string | null }>
+  }): void {
+    const now = new Date().toISOString()
+    const insertSub = this.#db.prepare(
+      `INSERT INTO sub_pieces (sub_piece_cid, assembled_car_length, target_size_bytes,
+                                status, car_path, assembled_sha256, built_at, created_at)
+       VALUES (?, ?, ?, 'built', ?, ?, ?, ?)`
+    )
+    const insertMember = this.#db.prepare(
+      `INSERT INTO sub_piece_members (sub_piece_cid, member_cid, member_sort_order, member_sha256, member_raw_size)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    this.#db.exec('BEGIN')
+    try {
+      insertSub.run(
+        args.subPieceCid,
+        args.assembledCarLength,
+        args.targetSizeBytes,
+        args.carPath,
+        args.assembledSha256,
+        now,
+        now
+      )
+      args.members.forEach((m, i) => insertMember.run(args.subPieceCid, m.cid, i, m.sha256, m.rawSize))
+      this.#db.exec('COMMIT')
+    } catch (err) {
+      this.#db.exec('ROLLBACK')
+      throw err
+    }
+  }
+
   /** Look up a sub-piece by its packed PieceCID v2. Null when no row exists. */
   subPieceByCid(subPieceCid: string): SubPieceRow | null {
     const row = this.#db
@@ -775,6 +845,12 @@ export class MigrationDB {
          FROM pieces p
          WHERE p.status='done'
            AND p.cid NOT IN (SELECT member_cid FROM sub_piece_members)
+           AND p.cid NOT IN (
+             SELECT am.cid FROM aggregate_members am
+             JOIN aggregates a ON a.idx = am.aggregate_idx
+             WHERE am.cid IS NOT NULL
+               AND a.status IN ('submitted', 'parked', 'committed')
+           )
          ORDER BY p.cid`
       )
       .all()

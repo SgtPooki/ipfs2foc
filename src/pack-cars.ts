@@ -43,6 +43,7 @@ import * as Link from 'multiformats/link'
 import * as Raw from 'multiformats/codecs/raw'
 import type { MigrationDB, PieceRow } from './db.ts'
 import { fetchCar } from './gateway.ts'
+import { repackAfterPackCars } from './migrate.ts'
 import { log, pool } from './util.ts'
 
 /** Default target raw size for one assembled sub-piece. Stays under the 1_069_547_520-byte raw cap. */
@@ -300,6 +301,8 @@ export interface PackCarsOptions {
   gateways: string[]
   /** Per-sub-piece raw-size budget. Default `DEFAULT_PACK_TARGET_BYTES`. */
   targetSizeBytes?: number
+  /** Aggregate raw-size budget passed to `repackAfterPackCars`. Must match `--piece-size` plan used. */
+  aggregateSizeBytes?: bigint
   /** Directory under which assembled CAR files are persisted. Required for first ship. */
   carStore: string
   /** Bounded fan-out per assembly. Default 4. */
@@ -364,18 +367,22 @@ export async function runPackCars(db: MigrationDB, opts: PackCarsOptions): Promi
         db.donePiecesFreeForPacking().map((p) => [p.cid, p])
       )
       const built = await buildOneBin(bin, target, opts.carStore, opts.gateways, fetchConcurrency)
-      // Persist planned + transition to built atomically by ordering the calls.
-      db.recordPlannedSubPiece({
+      // One transaction inserts the sub_piece row in `built` status alongside
+      // its members. A crash anywhere before this returns leaves no partial DB
+      // state — the CAR file on disk is the only stranded artifact, and the
+      // next pack-cars run can rebuild and replace it.
+      db.recordBuiltSubPiece({
         subPieceCid: built.pieceCid,
         assembledCarLength: built.assembledBytes,
         targetSizeBytes: target,
+        carPath: built.filePath,
+        assembledSha256: built.sha256,
         members: bin.memberCids.map((cid) => ({
           cid,
           rawSize: piecesByCid.get(cid)?.rawSize ?? null,
           sha256: null,
         })),
       })
-      db.markSubPieceBuilt(built.pieceCid, built.filePath, built.sha256)
       log(`  + sub-piece ${built.pieceCid} (${built.assembledBytes} bytes, ${bin.memberCids.length} member(s))`)
       summary.built += 1
     } catch (err) {
@@ -384,6 +391,22 @@ export async function runPackCars(db: MigrationDB, opts: PackCarsOptions): Promi
       summary.failed += 1
     }
   }
+
+  // Repack planned aggregates so their members reference the freshly built
+  // sub-pieces. Without this, `pdp-submit` still sees the per-source-CID
+  // composition `plan` wrote and asks the SP to pull individual files (most
+  // of which are below the provider's minimum piece size). Frozen aggregates
+  // (submitted/parked/committed) are left untouched.
+  if (summary.built > 0) {
+    // Inherit the aggregate size from the planned aggregates `plan` wrote, so
+    // we do not need to thread `--piece-size` through here. All planned
+    // aggregates share the same size by construction.
+    const existing = db.aggregates().find((a) => a.status === 'planned')
+    const aggregateSizeBytes = opts.aggregateSizeBytes
+      ?? (existing != null ? BigInt(existing.pieceSizeBytes) : 32n * 1024n * 1024n * 1024n)
+    repackAfterPackCars(db, aggregateSizeBytes)
+  }
+
   return summary
 }
 
@@ -394,21 +417,50 @@ async function buildOneBin(
   gateways: string[],
   fetchConcurrency: number
 ): Promise<{ pieceCid: string; assembledBytes: number; sha256: string; filePath: string }> {
-  // Bounded fan-out across the member fetches. Each fetch returns a streaming
-  // body; the assembly step consumes them in canonical order.
-  const fetched = await pool(bin.memberCids, fetchConcurrency, async (cid) => {
-    const primary = gateways[0]
-    const result = await fetchCar(primary, cid)
-    return { cid, body: result.body }
-  })
-  const ok = fetched.every((r) => r.ok)
-  if (!ok) {
-    const firstErr = fetched.find((r) => !r.ok)
-    throw new Error(`member fetch failed: ${firstErr && !firstErr.ok ? firstErr.error.message : 'unknown'}`)
+  // Fetch lazily, one member at a time. Pre-fetching all member streams in
+  // parallel keeps the later ones idle while the first is consumed; the
+  // gateway closes those idle response bodies after its inactivity timeout
+  // and the consumer sees `Unexpected end of data`. Streaming each member in
+  // turn keeps every response under active read.
+  void fetchConcurrency
+  const memberStreams: Array<{ cid: string; body: ReadableStream<Uint8Array> }> = bin.memberCids.map(
+    (cid) => ({
+      cid,
+      get body(): ReadableStream<Uint8Array> {
+        throw new Error(`internal: member body must be fetched lazily for ${cid}`)
+      },
+    })
+  )
+  // Override the lazy body with a fetch invoked at consume time. The
+  // assembler iterates `memberStreams` sequentially, so this materialises
+  // each body just before its bytes are read.
+  for (const m of memberStreams) {
+    Object.defineProperty(m, 'body', {
+      configurable: true,
+      get() {
+        // Replace the getter with a resolved stream on first access.
+        const promise = fetchCar(gateways[0]!, m.cid).then((r) => r.body)
+        const lazy = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            try {
+              const body = await promise
+              const reader = (body as unknown as { getReader: () => ReadableStreamDefaultReader<Uint8Array> }).getReader()
+              while (true) {
+                const { value, done } = await reader.read()
+                if (done) break
+                controller.enqueue(value)
+              }
+              controller.close()
+            } catch (err) {
+              controller.error(err)
+            }
+          },
+        })
+        Object.defineProperty(m, 'body', { value: lazy, configurable: false })
+        return lazy
+      },
+    })
   }
-  const memberStreams = fetched
-    .filter((r): r is { ok: true; value: { cid: string; body: ReadableStream<Uint8Array> } } => r.ok)
-    .map((r) => r.value)
 
   void target
 
