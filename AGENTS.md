@@ -38,6 +38,7 @@ skills first.
 | `src/metrics.ts`, `src/util.ts` | `no-internal-jargon-leakage`, `anti-ai-smell`, `documentation-voice` |
 | `src/piece-aggregate.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior` |
 | `src/analyze.ts` | `sensible-defaults`, `sample-not-sweep-at-scale`, `memory-aware-scaling`, `default-mainnet-network`, `prefer-head-over-get`, `no-internal-jargon-leakage`, `anti-ai-smell` |
+| `src/pack-cars.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior`, `prefer-upstream-libraries`, `no-defense-in-depth-as-ignorance-mask` |
 | `test/**` | `verify-actual-behavior`, `no-vendor-leakage`, `no-internal-jargon-leakage` |
 | `package.json` dep add / SDK swap | `prefer-upstream-libraries`, `verify-actual-behavior` |
 | `docs/**`, `README.md`, persistent docs | `documentation-voice`, `anti-ai-smell`, `no-vendor-leakage`, `no-internal-jargon-leakage` |
