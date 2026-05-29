@@ -20,6 +20,12 @@
 
 import { readFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
+import {
+  DEFAULT_PROBE_CONCURRENCY,
+  DEFAULT_SAMPLE,
+  formatAnalyzeText,
+  runAnalyze,
+} from './analyze.ts'
 import { MigrationDB } from './db.ts'
 import { classifyBaseFee, DEFAULT_MAX_BASE_FEE, getBaseFee, resolveRpcUrl } from './gas.ts'
 import { DEFAULT_GATEWAYS, probeGateway } from './gateway.ts'
@@ -56,6 +62,9 @@ Usage:
                      (uses PRIVATE_KEY env)
   foc-migrate report --data-set-id <id> [--db <file>] [--network mainnet|calibration] [--json]
                      [--check-ipni <delegated-routing-url>] [--ipni-sample 100|--ipni-all] [--ipni-concurrency 8]
+  foc-migrate analyze [--cids <file>] [--db <file>] [--car-store <dir>] [--gateway URL]
+                     [--sample 100|--all] [--probe-concurrency 8] [--bw-target URL]
+                     [--network mainnet|calibration] [--json]
 
 Defaults:
   db          ${DEFAULT_DB}
@@ -393,6 +402,44 @@ async function cmdGas(argv: string[]): Promise<void> {
   console.log(JSON.stringify({ rpcUrl, maxBaseFee: maxBaseFee.toString(), ...reading, baseFee: reading.baseFee.toString() }, null, 2))
 }
 
+async function cmdAnalyze(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      cids: { type: 'string' },
+      db: { type: 'string', default: DEFAULT_DB },
+      'car-store': { type: 'string' },
+      gateway: { type: 'string' },
+      sample: { type: 'string', default: String(DEFAULT_SAMPLE) },
+      all: { type: 'boolean', default: false },
+      'probe-concurrency': { type: 'string', default: String(DEFAULT_PROBE_CONCURRENCY) },
+      'bw-target': { type: 'string' },
+      network: { type: 'string', default: 'mainnet' },
+      json: { type: 'boolean', default: false },
+    },
+  })
+  const network = values.network as string
+  if (network !== 'mainnet' && network !== 'calibration') {
+    throw new Error(`unknown --network ${network} (expected mainnet|calibration)`)
+  }
+  const report = await runAnalyze({
+    cidsFile: values.cids,
+    dbPath: values.db as string,
+    carStorePath: values['car-store'],
+    gateway: values.gateway ?? DEFAULT_GATEWAYS[0],
+    sample: parsePositiveInt(values.sample as string, '--sample'),
+    all: values.all === true,
+    probeConcurrency: parsePositiveInt(values['probe-concurrency'] as string, '--probe-concurrency'),
+    bwTarget: values['bw-target'],
+    network,
+  })
+  if (values.json === true) {
+    console.log(JSON.stringify(report, null, 2))
+    return
+  }
+  console.log(formatAnalyzeText(report))
+}
+
 async function cmdServe(argv: string[]): Promise<void> {
   const { values } = parseArgs({
     args: argv,
@@ -466,6 +513,9 @@ async function main(): Promise<void> {
       break
     case 'report':
       await cmdReport(rest)
+      break
+    case 'analyze':
+      await cmdAnalyze(rest)
       break
     case undefined:
     case '-h':
