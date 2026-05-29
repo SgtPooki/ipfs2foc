@@ -116,6 +116,11 @@ export class MigrationDB {
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
+    // busy_timeout must come before any other exec: even setting WAL needs
+    // the write lock, and a sibling process holding it will error out the
+    // very first pragma without this. Without busy_timeout, the sqlite layer
+    // surfaces SQLITE_BUSY as `disk I/O error`.
+    this.#db.exec('PRAGMA busy_timeout = 5000')
     this.#db.exec('PRAGMA journal_mode = WAL')
     this.#migrate()
   }
