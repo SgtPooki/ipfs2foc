@@ -109,7 +109,13 @@ export async function dataSetProofHealth(
   const chain = chainFor(network)
   const setId = BigInt(dataSetId)
 
-  const [live, lastProvenRaw, nextChallengeMaybe, challengeFinality, noProvenSentinel, activePieceCount, currentEpoch] =
+  // PDPVerifier declares NO_PROVEN_EPOCH as a Solidity `constant` (value 0),
+  // so it is compile-time inlined and has no on-chain getter. The current
+  // @filoz/synapse-core ABI lists it as a function; calling it reverts.
+  // Hardcode the value here. Upstream tracking: synapse-core ABI generator
+  // skipping `constant` declarations.
+  const noProvenSentinel = 0n
+  const [live, lastProvenRaw, nextChallengeMaybe, challengeFinality, activePieceCount, currentEpoch] =
     await Promise.all([
       dataSetLive(client, { dataSetId: setId }),
       readContract(client, {
@@ -123,11 +129,6 @@ export async function dataSetProofHealth(
         abi: PDP_ABI,
         address: chain.contracts.pdp.address,
         functionName: 'getChallengeFinality',
-      }) as Promise<bigint>,
-      readContract(client, {
-        abi: PDP_ABI,
-        address: chain.contracts.pdp.address,
-        functionName: 'NO_PROVEN_EPOCH',
       }) as Promise<bigint>,
       getActivePieceCount(client, { dataSetId: setId }),
       getBlockNumber(client),
