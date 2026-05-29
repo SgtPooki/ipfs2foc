@@ -468,6 +468,24 @@ export class MigrationDB {
   }
 
   /**
+   * Persist the AddPieces tx hash as soon as the provider returns it, before
+   * the receipt poll completes. A process kill between the tx submission and
+   * the receipt parse leaves the row in `parked` with a non-null `tx_hash`;
+   * `aggregatesAwaitingReceipt` picks those up on restart so the migrator
+   * resumes from the receipt step instead of re-pulling and re-adding.
+   */
+  markAggregateTxSubmitted(idx: number, txHash: string): void {
+    this.#db
+      .prepare(`UPDATE aggregates SET tx_hash=? WHERE idx=?`)
+      .run(txHash, idx)
+  }
+
+  /** Aggregates whose AddPieces tx is in flight but whose local commit row has not landed yet. */
+  aggregatesAwaitingReceipt(): AggregateRow[] {
+    return this.aggregates().filter((a) => a.txHash != null && a.status !== 'committed')
+  }
+
+  /**
    * Record the on-chain AddPiece: data set, piece id, transaction hash, and the
    * receipt's block number. The block number is set only when the PiecesAdded
    * event was parsed and matched against the local aggregate root; absence

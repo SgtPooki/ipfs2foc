@@ -103,6 +103,42 @@ export async function runSubmitPdp(db: MigrationDB, opts: SubmitPdpOptions): Pro
     }
 
     const members = db.aggregateManifest(agg.idx)
+    const aggBytesPlanned = members.reduce((sum, m) => sum + m.rawSize, 0)
+
+    // Resume path: a prior run sent the AddPieces tx but was killed before the
+    // receipt parse landed. Skip pull + add and jump straight to receipt
+    // validation using the persisted tx_hash.
+    if (agg.txHash != null) {
+      const aggregate = pieceAggregateCommP(members.map((m) => ({ pieceCid: m.pieceCid, rawSize: m.rawSize })))
+      log(`aggregate ${agg.idx}: resuming receipt validation for tx ${agg.txHash} (root ${aggregate.rootPieceCid})`)
+      const onChain = await activePieceCids(rpcUrl, opts.network, opts.dataSetId)
+      if (onChain.has(aggregate.rootPieceCid)) {
+        let event: Awaited<ReturnType<typeof fetchAddPiecesEvent>> = null
+        try { event = await fetchAddPiecesEvent(rpcUrl, opts.network, opts.dataSetId, agg.txHash) } catch { /* fall through */ }
+        if (event != null && event.pieceCids.includes(aggregate.rootPieceCid)) {
+          const eventPieceId = event.pieceIds[event.pieceCids.indexOf(aggregate.rootPieceCid)]!.toString()
+          db.markCommitted(agg.idx, {
+            dataSetId: String(opts.dataSetId),
+            txHash: agg.txHash,
+            pieceId: eventPieceId,
+            committedBlock: event.blockNumber.toString(),
+          })
+        } else {
+          db.markCommittedUnverified(agg.idx, {
+            dataSetId: String(opts.dataSetId),
+            txHash: agg.txHash,
+            reason: 'resumed without receipt event match',
+          })
+        }
+        await evictCachedCars(db, agg.idx)
+        committedCount += 1
+        committedBytes += aggBytesPlanned
+        log(`aggregate ${agg.idx}: committed via resume (data set ${opts.dataSetId}, tx ${agg.txHash})`)
+      } else {
+        log(`aggregate ${agg.idx}: tx ${agg.txHash} not yet visible on chain; will retry on next run`)
+      }
+      continue
+    }
 
     // 1. Pull sub-pieces in batches. The pull admission eth_call-simulates
     // AddPieces over the batch, and PDPVerifier's PiecesAdded event carries one
@@ -188,6 +224,12 @@ export async function runSubmitPdp(db: MigrationDB, opts: SubmitPdpOptions): Pro
         aggregate.orderedSubPieceCids,
         addExtra
       ))
+      // Persist tx_hash before any further work so a kill between here and
+      // markCommitted leaves a recoverable breadcrumb. Restart picks the
+      // aggregate up via `aggregatesAwaitingReceipt` and resumes from the
+      // receipt poll instead of re-pulling and re-adding (which would land
+      // a duplicate AddPieces tx for the same root).
+      db.markAggregateTxSubmitted(agg.idx, txHash)
     } catch (err) {
       // The add may have landed on chain before the provider errored. Confirm
       // against active pieces before treating it as a failure.
