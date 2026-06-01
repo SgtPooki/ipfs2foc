@@ -14,16 +14,21 @@ and stores none of the payload.
    trustless gateway and stream it through the Filecoin piece hasher to get its
    [**PieceCID v2**](docs/glossary.md#piececid-v2) ([FRC-0069](docs/glossary.md#frc-0069)). The CAR is rooted at the original CID, so storing it
    keeps the CID intact, and the CAR root is checked against the requested CID.
-2. **Pack.** Bin-pack pieces into aggregates by the `--piece-size` target (default
-   32 GiB; cap it to the provider's maximum piece size). Each aggregate's root is the
-   [**aggregate piece commitment**](docs/glossary.md#aggregate-piece-commitment) — the merkle root of the [sub-piece](docs/glossary.md#sub-piece) commitments,
-   ordered largest-padded-first and zero-padded to the next power of two, the same
-   value the provider re-derives on add.
+2. **Pack.** Group source CIDs into [**sub-pieces**](docs/glossary.md#sub-piece) and bin-pack those into aggregates by
+   the `--piece-size` target (default 32 GiB; cap it to the provider's maximum piece size).
+   In the **single-asset** path (`plan`'s default), each source CID becomes one
+   [passthrough sub-piece](docs/glossary.md#passthrough-sub-piece) whose pull source is the gateway URL directly; no CAR file
+   touches migrator disk. In the **multi-asset** path (`plan --no-auto-pack` followed
+   by `pack-cars`), source CIDs are concatenated into [assembled sub-pieces](docs/glossary.md#assembled-sub-piece) — one
+   multi-root CAR file per sub-piece under `--car-store`. Either way, each aggregate's
+   root is the [**aggregate piece commitment**](docs/glossary.md#aggregate-piece-commitment) — the merkle root of its sub-piece
+   commitments, ordered largest-padded-first and zero-padded to the next power of two,
+   the same value the provider re-derives on add.
 3. **Pull.** For each sub-piece, ask the provider via [PDP pull](docs/glossary.md#pdp-pull) to `POST /pdp/piece/pull` from
-   `<source-base>/piece/{pcidv2}` — a redirect endpoint that 302s to the gateway CAR.
-   The provider follows the redirect, downloads the CAR from the gateway, verifies its
-   CommP against the declared PieceCID, and parks it. The migrator serves only the
-   redirect, so no payload passes through it.
+   `<source-base>/piece/{pcidv2}`. `redirect-serve` looks the sub-piece up locally and
+   serves a passthrough sub-piece as a 302 to the gateway CAR or an assembled sub-piece
+   as a byte-served local CAR file. The provider downloads it, verifies its CommP against
+   the declared PieceCID, and parks it.
 4. **Aggregate-add.** `POST /pdp/data-sets/{id}/pieces` with the parked sub-pieces.
    The provider recomputes the aggregate piece commitment, confirms it equals the
    submitted root, and lands one on-chain AddPieces. With the [data set's](docs/glossary.md#data-set)
@@ -93,8 +98,15 @@ you target (default `mainnet`; pass `--network calibration` for the testnet).
 ## Quickstart
 
 Complete **Prerequisites** above first. Default network is **mainnet**; pass
-`--network calibration` for the testnet. `redirect-serve` (step 2) and
-`pdp-submit` (step 3) run concurrently in separate terminals.
+`--network calibration` for the testnet. Two paths share steps 0, 1, 3, 4, 5:
+
+- **Single-asset** (default): one source CID per sub-piece. No staging disk; `plan`
+  alone produces aggregates ready for `pdp-submit`.
+- **Multi-asset**: concatenate many source CIDs into one assembled CAR per
+  sub-piece. Use when source CIDs are smaller than the provider's `Min Piece Size`
+  or when you want fewer on-chain pieces per source CID.
+
+`redirect-serve` and `pdp-submit` run concurrently in separate terminals.
 
 ```bash
 export PRIVATE_KEY=0x...
@@ -107,11 +119,18 @@ node src/index.ts create-data-set --provider-id <provider-id>
 # 1. Confirm a trustless gateway returns a deterministic CAR for one of your CIDs.
 node src/index.ts probe <sample-cid> --gateway https://trustless-gateway.link
 
-# 2. Compute piece commitments and pack aggregates into a SQLite DB.
+# 2a. Single-asset: compute piece commitments and pack aggregates over passthrough
+#     sub-pieces (one source CID per sub-piece).
 printf '%s\n' <cid> > cids.txt
 node src/index.ts plan --cids cids.txt --db migrate.db
 
-# 3. (Terminal A — leave running) Serve the redirect with a public HTTPS
+# 2b. Multi-asset: plan without auto-pack, then assemble multi-root CARs.
+#     `--pack-target-size` must meet the provider's Min Piece Size.
+# node src/index.ts plan --cids cids.txt --db migrate.db --no-auto-pack
+# node src/index.ts pack-cars --db migrate.db --car-store /var/foc-cars \
+#   --pack-target-size 512MiB
+
+# 3. (Terminal A — leave running) Serve sub-pieces with a public HTTPS
 #    ingress. `--ingress cloudflared` spawns a no-signup Cloudflare tunnel and
 #    logs the public URL; the default `funnel` mode expects you to front the
 #    local port yourself (Tailscale Funnel / Cloudflare Tunnel / VPS). See
@@ -130,6 +149,10 @@ node src/index.ts report --db migrate.db --data-set-id <data-set-id>
 
 `cids.txt`: one CID per line; blank lines and `#` comments are ignored.
 
+`plan` is **INSERT-only**: re-running it after appending CIDs adds new
+sub-pieces and aggregates without rewriting prior planning state. Existing
+`submitted`/`parked`/`committed` aggregates are never touched.
+
 ## Commands
 
 ```bash
@@ -139,9 +162,16 @@ node src/index.ts probe <cid> [--gateway https://gateway.pinata.cloud]...
 # Compute one PieceCID v2
 node src/index.ts commp <cid>
 
-# Full pipeline: commitments + aggregate packing into a SQLite DB
+# Full pipeline: commitments + aggregate packing into a SQLite DB.
+# Default auto-wraps each source CID as a passthrough sub-piece. Pass
+# --no-auto-pack to defer sub-piece assembly to `pack-cars` (multi-asset).
 node src/index.ts plan --cids cids.txt [--db migrate.db] [--gateway URL]... \
-  [--piece-size 32GiB] [--concurrency 8]
+  [--piece-size 32GiB] [--concurrency 8] [--no-auto-pack]
+
+# Multi-asset packer: assemble many source CIDs into one multi-root CAR per
+# sub-piece, append aggregates over the new sub-pieces.
+node src/index.ts pack-cars --db migrate.db --car-store <dir> [--gateway URL]... \
+  [--pack-target-size 512MiB] [--fetch-concurrency 4]
 
 # Progress and the aggregate plan
 node src/index.ts status [--db migrate.db]
@@ -153,7 +183,9 @@ node src/index.ts serve [--db migrate.db] [--cids cids.txt] [--gateway URL]... \
 # Current network base fee and whether to pause submission
 node src/index.ts gas [--network mainnet|calibration] [--rpc-url URL] [--max-base-fee 1000000]
 
-# Redirect server: GET /piece/{pcidv2} -> 302 to the gateway CAR
+# Sub-piece server: GET /piece/{pcidv2} -> 302 to the gateway CAR for a
+# passthrough sub-piece, or byte-serves the assembled CAR file for a
+# multi-asset sub-piece.
 node src/index.ts redirect-serve [--db migrate.db] [--port 4322]
 
 # Provision a new FWSS data set with withIPFSIndexing (PRIVATE_KEY env)
@@ -240,9 +272,12 @@ reads the latest block base fee (attoFIL/gas; floor 100) and reports a level: `o
 ## State
 
 State lives in the SQLite database (`migrate.db` by default): each CID's piece commitment
-and status, the aggregate plan, and per-aggregate lifecycle (data set id, transaction
-hash). A run resumes from here; re-running `plan` computes only CIDs that are not yet
-`done` and retries failures. Tables: `pieces`, `aggregates`, `aggregate_members`.
+and status, the sub-piece (passthrough or assembled) it belongs to, the aggregate plan,
+and per-aggregate lifecycle (data set id, transaction hash). A run resumes from here;
+re-running `plan` computes only CIDs that are not yet `done`, retries failures, and
+appends new sub-pieces and aggregates without disturbing prior planning state.
+Tables: `pieces`, `sub_pieces`, `sub_piece_members`, `aggregates`,
+`aggregate_members`.
 
 ## Scope and limits
 

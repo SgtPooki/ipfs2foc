@@ -66,9 +66,35 @@ from the bytes it pulls and rejects a mismatch. Specified in
 
 ## Sub-piece
 
-One CID's CAR after commP hashing: the leaf of an aggregate. Each
-sub-piece is below the provider's `PieceSizeLimit` (~1 GiB raw) and
-contributes one commitment to the aggregate piece commitment.
+One leaf of an aggregate, addressed by its own PieceCID v2. Two shapes:
+
+- **Passthrough sub-piece**: one source CID wrapped as a single-member
+  sub-piece whose pull source is the gateway URL. No CAR file on
+  migrator disk. Used by `plan`'s default single-asset path; the
+  provider fetches the CAR straight from the gateway via the migrator's
+  302 redirect.
+- **Assembled sub-piece**: N source CIDs concatenated into one
+  multi-root CAR file stored under `--car-store`. One assembled
+  sub-piece is one on-chain piece, regardless of how many source CIDs
+  it carries. Produced by `pack-cars` for the multi-asset path; served
+  byte-for-byte by `redirect-serve` during the provider pull.
+
+Each sub-piece stays below the provider's `PieceSizeLimit` (~1 GiB raw)
+and contributes one commitment to the aggregate piece commitment.
+
+## Passthrough sub-piece
+
+A sub-piece holding exactly one source CID, with no CAR file on
+migrator disk. The provider pulls the CAR through `redirect-serve`'s
+302 to the gateway. Default shape for the single-asset migration path.
+
+## Assembled sub-piece
+
+A sub-piece holding N source CIDs concatenated into one multi-root CAR
+file under `--car-store`. The migrator serves the file byte-for-byte
+during the provider pull. Used by the multi-asset migration path; one
+assembled sub-piece is one on-chain piece regardless of how many source
+CIDs it carries.
 
 ## Trustless gateway
 

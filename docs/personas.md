@@ -26,9 +26,16 @@ Knobs referenced below:
 - `--ingress` (default `funnel`): public HTTPS ingress in front of
   `redirect-serve`. Details in [`ingress.md`](./ingress.md).
 
-Multi-asset CAR sub-pieces (packing M assets per sub-piece) are still in
-investigation. Anything tagged **(planned)** below depends on that work
-landing.
+Two sub-piece shapes are available:
+
+- **Passthrough sub-piece** (default): one source CID per sub-piece,
+  pulled straight from the gateway through `redirect-serve`'s 302. No
+  CAR file on migrator disk. Produced by `plan`.
+- **Assembled sub-piece**: many source CIDs concatenated into one
+  multi-root CAR per sub-piece, stored under `--car-store` and served
+  byte-for-byte during the provider pull. Produced by `pack-cars` after
+  `plan --no-auto-pack`. Use when the provider's `Min Piece Size`
+  exceeds individual source CIDs, or to drop the on-chain piece count.
 
 ## Choosing knobs in plain terms
 
@@ -59,17 +66,13 @@ Answer these in order and stop at the first match.
 - Hours to days → `--ingress funnel` or a self-hosted reverse proxy, so
   the hostname is stable across the whole run.
 
-**Are you packing multiple assets per sub-piece?** (planned)
+**Are you packing multiple assets per sub-piece?**
 
-Cache the assembled sub-piece by default — `--car-store <dir>`. For
-small jobs the cache is small; for long ones it is the cheap insurance
-against a source-gateway outage burning sub-pieces mid-pull. Per-aggregate
-eviction on `committed` keeps peak disk at `--max-in-flight × --piece-size`.
-
-Opt out of the cache (stream-assemble, no `--car-store`) only when disk
-is too tight even for `--max-in-flight 1 × --piece-size`. Stream-only
-gives up the source-gateway-outage safety net; document this for the
-operator who chooses it.
+Run the multi-asset path: `plan --no-auto-pack`, then `pack-cars
+--car-store <dir>`. Assembled sub-piece CARs live on disk and are
+served byte-for-byte during the provider pull, so a source-gateway
+outage after assembly does not stall a pull. Per-aggregate eviction on
+`committed` keeps peak disk at `--max-in-flight × --piece-size`.
 
 If none of the above narrowed things down, the SMB / small studio
 profile is the safe default: `--ingress funnel`, `--max-in-flight 1`,
@@ -79,29 +82,23 @@ defaults everywhere else.
 
 | Persona | Assets | Total size | Disk free | Upload bw | Time tolerance | Source gateway reliance OK over | Ingress | Hosting path | `--max-in-flight` | `--piece-size` | `--pull-batch` |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Laptop tester | 10–1000 | < 5 GiB | < 50 GiB | low (home upload) | one-shot, minutes to ~1 hour | minutes | `cloudflared` | cached sub-piece (default); stream-assemble only if disk < ~5 GiB **(planned)** | `1` | default | default |
-| SMB / small studio | 10k–100k | 5–100 GiB | 100 GiB+ | medium (office or fiber home) | multi-hour, up to ~1 day | hours | `funnel` | cached sub-piece, single aggregate in flight | `1`–`2` | default | default |
-| Production migrator | 1M+ | TB-scale | 100–500 GiB (not TB) | high (VPS / cloud) | multi-day batch | days, with retry budget | `funnel` (long-lived `*.ts.net`) or VPS reverse proxy | cached sub-piece, per-aggregate evict on `committed` | `4` (default) | default | default |
-| Bandwidth-bound migrator | any | up to ~100 TB | as low as ~32 GiB | low (slow upload pipe) | multi-day to multi-week | days | `funnel` | cached sub-piece, strict one-at-a-time | `1` | default | default |
+| Laptop tester | 10–1000 | < 5 GiB | < 50 GiB | low (home upload) | one-shot, minutes to ~1 hour | minutes | `cloudflared` | passthrough sub-piece (default) | `1` | default | default |
+| SMB / small studio | 10k–100k | 5–100 GiB | 100 GiB+ | medium (office or fiber home) | multi-hour, up to ~1 day | hours | `funnel` | passthrough, or assembled sub-piece when source CIDs are sub-MiB | `1`–`2` | default | default |
+| Production migrator | 1M+ | TB-scale | 100–500 GiB (not TB) | high (VPS / cloud) | multi-day batch | days, with retry budget | `funnel` (long-lived `*.ts.net`) or VPS reverse proxy | assembled sub-piece, per-aggregate evict on `committed` | `4` (default) | default | default |
+| Bandwidth-bound migrator | any | up to ~100 TB | as low as ~32 GiB | low (slow upload pipe) | multi-day to multi-week | days | `funnel` | assembled sub-piece, strict one-at-a-time | `1` | default | default |
 
-"Hosting path" column maps to the multi-asset CAR work:
+"Hosting path" column maps to the sub-piece shape:
 
-- **Cached sub-piece path (default).** Assembled sub-piece CAR is
-  written to `--car-store` and served verbatim during the provider pull.
-  Disk-full fails loud and early; eviction on `committed` keeps peak
-  disk bounded. This is the recommended path for every persona that has
-  the disk for it.
-- **Stream-assemble path (planned, opt-out).** Assembled bytes are
-  produced on the fly from the source IPFS gateway for each pull. No
-  migrator disk needed beyond working buffers. Source gateway flakiness
-  mid-pull stalls silently until the provider's 2-minute idle timeout
-  fires and the attempt restarts from byte 0. Use only when disk cannot
-  fit even one `--piece-size`.
-
-Until multi-asset packing lands, the system uses one asset CID per
-sub-piece and the redirect-only path. Disk on the migrator is effectively
-zero in that mode, and the matrix's hosting-path column does not apply
-yet.
+- **Passthrough sub-piece (single-asset, default).** One source CID per
+  sub-piece. `redirect-serve` 302s the provider to the gateway CAR
+  directly; no CAR file on migrator disk. Disk on the migrator is
+  effectively zero in this mode and the matrix's hosting-path column is
+  informational only.
+- **Assembled sub-piece (multi-asset).** Many source CIDs concatenated
+  into one CAR file under `--car-store`, served byte-for-byte during
+  the provider pull. Disk-full fails loud and early; eviction on
+  `committed` keeps peak disk bounded. Use when source CIDs sit below
+  the provider's `Min Piece Size` or to drop the on-chain piece count.
 
 ## Laptop tester
 
@@ -207,13 +204,12 @@ Run on a host with a public IP and a long-lived reverse proxy in front
 of `:4322`. Funnel works here too if the VM is in your tailnet.
 
 ```bash
-node src/index.ts plan --cids full-catalog.csv --piece-size 32GiB
+node src/index.ts plan --cids full-catalog.csv --piece-size 32GiB --no-auto-pack
+node src/index.ts pack-cars --car-store /var/lib/foc-migrate/cars --pack-target-size 512MiB
 node src/index.ts redirect-serve --port 4322 &       # behind nginx/caddy on :443
-
 node src/index.ts pdp-submit \
   --source-base https://migrate.example.com \
-  --max-in-flight 4 \
-  --car-store /var/lib/foc-migrate/cars   # planned; cached sub-piece path
+  --max-in-flight 4
 ```
 
 Peak disk with defaults: `4 × 32 GiB ≈ 128 GiB`. Per-aggregate eviction
@@ -260,13 +256,12 @@ size is unbounded.
 ### What setup looks like
 
 ```bash
-node src/index.ts plan --cids big-catalog.csv --piece-size 32GiB
+node src/index.ts plan --cids big-catalog.csv --piece-size 32GiB --no-auto-pack
+node src/index.ts pack-cars --car-store /data/foc-migrate/cars --pack-target-size 512MiB
 node src/index.ts redirect-serve --port 4322 &       # funnel or cloudflared
-
 node src/index.ts pdp-submit \
   --source-base https://<your-public-host> \
-  --max-in-flight 1 \
-  --car-store /data/foc-migrate/cars      # planned; cached sub-piece path
+  --max-in-flight 1
 ```
 
 With those settings, a host with ~50 GiB free disk can migrate a 100 TB
