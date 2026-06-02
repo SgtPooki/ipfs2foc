@@ -13,7 +13,7 @@
 import { packAggregates } from './aggregate.ts'
 import type { MigrationDB } from './db.ts'
 import { formatStageSummary, StageStats, Timer } from './metrics.ts'
-import { categoryOf, fetchAndComputePiece } from './piece.ts'
+import { categoryOf, fetchAndComputePiece, recordPieceOutcome } from './piece.ts'
 import { log, pool } from './util.ts'
 
 export interface PlanOptions {
@@ -58,7 +58,7 @@ export async function runPlan(db: MigrationDB, opts: PlanOptions): Promise<PlanS
       })
       const elapsed = timer.stop()
       stats.record(piece.rawSize, elapsed)
-      db.recordPieceSuccess(cid, piece.pieceCid, piece.rawSize, piece.gateway, piece.url, piece.memberSha256)
+      recordPieceOutcome(db, cid, piece)
       log(`  + ${cid} -> ${piece.pieceCid} (${piece.rawSize} bytes via ${piece.gateway}, ${Math.round(elapsed)}ms)`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -146,6 +146,14 @@ export function appendAggregatesFromFreeSubPieces(db: MigrationDB, aggregateSize
     db.saveAggregate(base + i, agg.rootPieceCid, aggregateSizeBytes, agg.members.map((m) => m.cid))
   })
 
+  // A sub-piece whose padded size exceeds the aggregate budget can never be
+  // packed at this `--piece-size`. Mark its source CIDs `oversized` (a terminal
+  // status, distinct from a transient `done`) so `report` surfaces them instead
+  // of counting them as pending forever. `resetOversized` re-arms them when the
+  // operator re-packs at a larger size.
+  const oversizedSourceCids = oversized.flatMap((p) => db.subPieceMemberCids(p.cid))
+  if (oversizedSourceCids.length > 0) db.markOversized(oversizedSourceCids)
+
   log(`Appended ${aggregates.length} planned aggregate(s) over ${subPieces.length} free sub-piece(s).`)
-  return oversized.map((p) => p.cid)
+  return oversizedSourceCids
 }

@@ -25,6 +25,7 @@ export type FailureCategory =
   | 'oversized'
   | 'pull_cap_exceeded'
   | 'byte_unstable'
+  | 'unservable_fallback_only'
   | 'other'
 
 /**

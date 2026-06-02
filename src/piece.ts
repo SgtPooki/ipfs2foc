@@ -16,7 +16,7 @@ import * as Link from 'multiformats/link'
 import * as Raw from 'multiformats/codecs/raw'
 import { GatewayError, fetchCar } from './gateway.ts'
 import { fetchCarViaHelia, DEFAULT_FALLBACK_TIMEOUT_MS } from './helia-fallback.ts'
-import type { FailureCategory } from './db.ts'
+import type { FailureCategory, MigrationDB } from './db.ts'
 
 /**
  * Error subclass used internally by piece-compute callers to surface a failure
@@ -192,6 +192,34 @@ export async function fetchAndComputePiece(
   }
 
   throw new PieceComputeError(`all sources failed for ${cid}\n    ${errors.join('\n    ')}`, aggregated)
+}
+
+/**
+ * Record a computed piece, deciding whether it can actually be migrated.
+ *
+ * A piece served by a gateway carries a URL the storage provider's pull can
+ * 302 to. A piece resolved only via the IPFS fallback has `source==='helia'`
+ * and an empty URL: the provider pull is HTTP-only and has nothing to fetch, so
+ * such a piece cannot complete a migration as the pipeline stands (serving the
+ * bytes locally would be required). Recording it as a failure with a dedicated
+ * category — rather than a `done` success that silently never migrates — keeps
+ * `report` honest: the operator sees a clear terminal reason instead of a CID
+ * stuck forever in "pending".
+ *
+ * Single chokepoint for both the streaming runner and `plan`, so neither can
+ * record an unservable success.
+ */
+export function recordPieceOutcome(db: MigrationDB, cid: string, piece: PieceResult): void {
+  if (piece.source === 'helia' && (piece.url == null || piece.url === '')) {
+    db.recordPieceFailure(
+      cid,
+      'resolved only via the IPFS fallback (no gateway URL for the provider to pull); ' +
+        'not migratable without serving the bytes locally',
+      'unservable_fallback_only'
+    )
+    return
+  }
+  db.recordPieceSuccess(cid, piece.pieceCid, piece.rawSize, piece.gateway, piece.url, piece.memberSha256)
 }
 
 // Re-export so the runner can plumb the default through without importing helia directly.

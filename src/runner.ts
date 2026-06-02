@@ -10,7 +10,7 @@
 
 import type { MigrationDB } from './db.ts'
 import { wrapDonePiecesAsPassthroughSubPieces, appendAggregatesFromFreeSubPieces } from './migrate.ts'
-import { categoryOf, fetchAndComputePiece } from './piece.ts'
+import { categoryOf, fetchAndComputePiece, recordPieceOutcome } from './piece.ts'
 import { log } from './util.ts'
 
 export type RunState = 'idle' | 'running' | 'paused'
@@ -133,7 +133,7 @@ export class Runner {
         ipfsFallback: this.#ipfsFallback,
         fallbackTimeoutMs: this.#fallbackTimeoutMs,
       })
-      this.#db.recordPieceSuccess(cid, piece.pieceCid, piece.rawSize, piece.gateway, piece.url, piece.memberSha256)
+      recordPieceOutcome(this.#db, cid, piece)
       log(`  + ${cid} -> ${piece.pieceCid}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

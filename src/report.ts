@@ -118,6 +118,35 @@ export function findUnaccountedOnChain(onChain: Set<string>, localRoots: string[
   return [...onChain].filter((r) => !local.has(r))
 }
 
+/**
+ * The migration is complete only when every input CID reached a terminal,
+ * accounted state and the storage provider has proven possession of the data.
+ *
+ * `oversized` is included deliberately: a CID too large to pack at the current
+ * `--piece-size` is not migrated, so a run with oversized CIDs is not complete
+ * until the operator re-packs at a larger size (or accepts and excludes them).
+ * Leaving it out would let `complete` be true while CIDs were silently dropped.
+ */
+export function computeReportComplete(args: {
+  unaccounted: number
+  pendingNotCommitted: number
+  failed: number
+  oversized: number
+  unaccountedOnChain: number
+  provenSinceAdd: boolean
+  inGoodStanding: boolean
+}): boolean {
+  return (
+    args.unaccounted === 0 &&
+    args.pendingNotCommitted === 0 &&
+    args.failed === 0 &&
+    args.oversized === 0 &&
+    args.unaccountedOnChain === 0 &&
+    args.provenSinceAdd &&
+    args.inGoodStanding
+  )
+}
+
 export async function runReport(db: MigrationDB, opts: ReportOptions): Promise<Report> {
   const rpcUrl = resolveRpcUrl({ rpcUrl: opts.rpcUrl, network: opts.network })
   const onChainRoots = await activePieceCids(rpcUrl, opts.network, opts.dataSetId)
@@ -195,13 +224,15 @@ export async function runReport(db: MigrationDB, opts: ReportOptions): Promise<R
     discrepancies,
     unaccountedOnChain,
     proof,
-    complete:
-      unaccounted === 0 &&
-      pendingNotCommitted === 0 &&
-      counts.failed === 0 &&
-      unaccountedOnChain.length === 0 &&
-      proof.provenSinceAdd &&
-      proof.inGoodStanding,
+    complete: computeReportComplete({
+      unaccounted,
+      pendingNotCommitted,
+      failed: counts.failed,
+      oversized: counts.oversized,
+      unaccountedOnChain: unaccountedOnChain.length,
+      provenSinceAdd: proof.provenSinceAdd,
+      inGoodStanding: proof.inGoodStanding,
+    }),
   }
 
   if (opts.ipniEndpoint != null && committed > 0) {
