@@ -29,6 +29,58 @@ export interface PullResponse {
   pieces: Array<{ pieceCid: string; status: PullPieceStatus }>
 }
 
+/** Curio's AddPieces status body — three independent signals plus the piece-id mapping. */
+export interface AddStatusBody {
+  txStatus?: string
+  addMessageOk?: boolean | null
+  piecesAdded?: boolean
+  confirmedPieceIds?: number[]
+}
+
+export interface AddStatusResult {
+  done: boolean
+  ok: boolean
+  reason?: string
+  confirmedPieceIds?: number[]
+}
+
+/**
+ * Interpret Curio's AddPieces status into terminal/ok signals. Kept pure (no
+ * fetch) so every signal combination is unit-testable.
+ *
+ * Three independent signals (`pdp/handlers.go:handleGetPieceAdditionStatus`):
+ *   txStatus      'pending' | 'confirmed' | 'failed' — chain landing only
+ *   addMessageOk  bool | null                        — inner AddPieces call succeeded (receipt status 1)
+ *   piecesAdded   bool                               — Curio finished downstream bookkeeping
+ *
+ * A reverted AddPieces gives `txStatus='confirmed'` with `addMessageOk=false`, so
+ * `ok` requires all three: confirmed AND addMessageOk AND piecesAdded. See
+ * `skills/addstatus-three-signals.md`. `httpStatus===404` means Curio has not yet
+ * observed the tx — keep polling. `body` is null only for that 404 case.
+ */
+export function interpretAddStatus(httpStatus: number, body: AddStatusBody | null): AddStatusResult {
+  if (httpStatus === 404) {
+    return { done: false, ok: false } // tx not yet observed by Curio
+  }
+  const b = body ?? {}
+  if (b.txStatus === 'failed') {
+    return { done: true, ok: false, reason: 'tx failed on chain' }
+  }
+  if (b.txStatus === 'confirmed') {
+    if (b.addMessageOk === false) {
+      return { done: true, ok: false, reason: 'AddPieces tx confirmed but reverted (receipt status 0)' }
+    }
+    if (b.addMessageOk === true && b.piecesAdded === true) {
+      return { done: true, ok: true, confirmedPieceIds: b.confirmedPieceIds }
+    }
+    // Confirmed on chain but Curio's bookkeeping has not caught up (addMessageOk
+    // still null, or piecesAdded false). Keep polling.
+    return { done: false, ok: false }
+  }
+  // txStatus 'pending' or anything else: keep polling.
+  return { done: false, ok: false }
+}
+
 export class PdpClient {
   #base: string
 
@@ -103,40 +155,15 @@ export class PdpClient {
    * all three: chain confirmed, inner call succeeded, Curio's piece IDs queryable.
    * `confirmedPieceIds` is the canonical on-chain piece-id mapping for the batch.
    */
-  async addStatus(
-    dataSetId: number,
-    txHash: string
-  ): Promise<{ done: boolean; ok: boolean; reason?: string; confirmedPieceIds?: number[] }> {
+  async addStatus(dataSetId: number, txHash: string): Promise<AddStatusResult> {
     const res = await fetch(`${this.#base}/pdp/data-sets/${dataSetId}/pieces/added/${txHash}`)
     if (res.status === 404) {
-      return { done: false, ok: false } // tx not yet observed by Curio
+      return interpretAddStatus(404, null)
     }
     if (!res.ok) {
       throw new Error(`addStatus: HTTP ${res.status} ${await res.text()}`)
     }
-    const body = (await res.json()) as {
-      txStatus?: string
-      addMessageOk?: boolean | null
-      piecesAdded?: boolean
-      confirmedPieceIds?: number[]
-    }
-
-    if (body.txStatus === 'failed') {
-      return { done: true, ok: false, reason: 'tx failed on chain' }
-    }
-    if (body.txStatus === 'confirmed') {
-      if (body.addMessageOk === false) {
-        return { done: true, ok: false, reason: 'AddPieces tx confirmed but reverted (receipt status 0)' }
-      }
-      if (body.addMessageOk === true && body.piecesAdded === true) {
-        return { done: true, ok: true, confirmedPieceIds: body.confirmedPieceIds }
-      }
-      // Confirmed on chain but Curio's bookkeeping has not caught up (addMessageOk
-      // still null, or piecesAdded false). Keep polling.
-      return { done: false, ok: false }
-    }
-    // txStatus 'pending' or anything else: keep polling.
-    return { done: false, ok: false }
+    return interpretAddStatus(res.status, (await res.json()) as AddStatusBody)
   }
 }
 
