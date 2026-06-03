@@ -11,13 +11,12 @@ not work; the provider re-validates the CAR against the PieceCID on add.
 Use `probe` against any candidate before planning a run:
 
 ```bash
-node src/index.ts probe <cid> --gateway https://<your-gateway>
+ipfs2foc probe <cid> --gateway https://<your-gateway>
 ```
 
-A future `ipfs2foc analyze` subcommand (see
-[#2](https://github.com/SgtPooki/ipfs2foc/issues/2)) will sweep a CID list
-against a gateway and report the pass rate. Until then, `probe` on a sample is
-the check.
+`ipfs2foc analyze` sweeps a CID list against a gateway and reports the pass
+rate, sizes, and a throughput estimate. Use `probe` for a single CID and
+`analyze --cids <file>` to pre-flight a whole list before planning.
 
 ## Gateway matrix
 
@@ -41,7 +40,7 @@ gateway URL through verbatim, so an operator who needs auth can put the token
 in the URL or front the gateway with a local proxy.
 
 ```bash
-node src/index.ts probe <cid> --gateway https://gateway.pinata.cloud
+ipfs2foc probe <cid> --gateway https://gateway.pinata.cloud
 ```
 
 ### trustless-gateway.link
@@ -51,7 +50,7 @@ second source to cross-check a CID, or as the only source when the content is
 already on the public IPFS network.
 
 ```bash
-node src/index.ts probe <cid> --gateway https://trustless-gateway.link
+ipfs2foc probe <cid> --gateway https://trustless-gateway.link
 ```
 
 ### Filebase
@@ -64,7 +63,7 @@ bucket before planning. The underlying S3 API serves objects keyed by upload,
 not by CID, and is not a substitute for the gateway.
 
 ```bash
-node src/index.ts probe <cid> --gateway https://<bucket>.myfilebase.com
+ipfs2foc probe <cid> --gateway https://<bucket>.myfilebase.com
 ```
 
 ### Storj

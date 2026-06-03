@@ -112,11 +112,11 @@ it works end-to-end before committing real data to it.
 brew install cloudflared
 
 # Plan + submit a tiny batch
-node src/index.ts plan --cids small-cid-list.txt --piece-size 32GiB
-node src/index.ts redirect-serve --ingress cloudflared --port 4322 &
+ipfs2foc plan --cids small-cid-list.txt --piece-size 32GiB
+ipfs2foc redirect-serve --ingress cloudflared --port 4322 &
 # logs print: cloudflared ingress: ready at https://<words>.trycloudflare.com
 
-node src/index.ts pdp-submit \
+ipfs2foc pdp-submit \
   --source-base https://<words>.trycloudflare.com \
   --max-in-flight 1
 ```
@@ -155,12 +155,12 @@ thousands of assets) onto FOC over a working day or two.
 ```bash
 # One-time: Tailscale signed in, MagicDNS + HTTPS certs on, funnel attr granted.
 
-node src/index.ts plan --cids assets.csv --piece-size 32GiB
-node src/index.ts redirect-serve --port 4322 &       # default --ingress funnel
+ipfs2foc plan --cids assets.csv --piece-size 32GiB
+ipfs2foc redirect-serve --port 4322 &       # default --ingress funnel
 tailscale funnel --bg 4322
 tailscale funnel status                              # note the *.ts.net URL
 
-node src/index.ts pdp-submit \
+ipfs2foc pdp-submit \
   --source-base https://<machine>.<tailnet>.ts.net \
   --max-in-flight 1
 ```
@@ -204,10 +204,10 @@ Run on a host with a public IP and a long-lived reverse proxy in front
 of `:4322`. Funnel works here too if the VM is in your tailnet.
 
 ```bash
-node src/index.ts plan --cids full-catalog.csv --piece-size 32GiB --no-auto-pack
-node src/index.ts pack-cars --car-store /var/lib/ipfs2foc/cars --pack-target-size 512MiB
-node src/index.ts redirect-serve --port 4322 &       # behind nginx/caddy on :443
-node src/index.ts pdp-submit \
+ipfs2foc plan --cids full-catalog.csv --piece-size 32GiB --no-auto-pack
+ipfs2foc pack-cars --car-store /var/lib/ipfs2foc/cars --pack-target-size 512MiB
+ipfs2foc redirect-serve --port 4322 &       # behind nginx/caddy on :443
+ipfs2foc pdp-submit \
   --source-base https://migrate.example.com \
   --max-in-flight 4
 ```
@@ -256,10 +256,10 @@ size is unbounded.
 ### What setup looks like
 
 ```bash
-node src/index.ts plan --cids big-catalog.csv --piece-size 32GiB --no-auto-pack
-node src/index.ts pack-cars --car-store /data/ipfs2foc/cars --pack-target-size 512MiB
-node src/index.ts redirect-serve --port 4322 &       # funnel or cloudflared
-node src/index.ts pdp-submit \
+ipfs2foc plan --cids big-catalog.csv --piece-size 32GiB --no-auto-pack
+ipfs2foc pack-cars --car-store /data/ipfs2foc/cars --pack-target-size 512MiB
+ipfs2foc redirect-serve --port 4322 &       # funnel or cloudflared
+ipfs2foc pdp-submit \
   --source-base https://<your-public-host> \
   --max-in-flight 1
 ```

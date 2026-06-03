@@ -38,7 +38,7 @@ brew install cloudflared            # macOS
 Run the ingress:
 
 ```bash
-node src/index.ts redirect-serve --ingress cloudflared --port 4322
+ipfs2foc redirect-serve --ingress cloudflared --port 4322
 # logs: cloudflared ingress: ready at https://<words>.trycloudflare.com
 ```
 
@@ -72,7 +72,7 @@ The macOS app bundles the CLI at
 `tailscale` is on `PATH` after install.
 
 ```bash
-node src/index.ts redirect-serve --port 4322 &       # default --ingress funnel
+ipfs2foc redirect-serve --port 4322 &       # default --ingress funnel
 tailscale funnel --bg 4322                            # public :443 -> :4322
 tailscale funnel status                               # prints https://<machine>.<tailnet>.ts.net
 curl -I https://<machine>.<tailnet>.ts.net/healthz    # expect HTTP 200 before submit
