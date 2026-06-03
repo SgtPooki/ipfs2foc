@@ -133,10 +133,24 @@ export interface FetchAndComputeOptions {
  * sha256 of the returned bytes is recorded as the canonical signature for
  * future cross-source comparison.
  */
+/**
+ * The CAR-fetching surface `fetchAndComputePiece` depends on, injected so the
+ * gateway-fallthrough, root-mismatch, and IPFS-fallback control flow can be
+ * tested with in-memory CAR streams (no network). Production uses the real
+ * gateway + Helia fetchers.
+ */
+export interface PieceFetchDeps {
+  fetchCar: typeof fetchCar
+  fetchCarViaHelia: typeof fetchCarViaHelia
+}
+
+const defaultPieceFetchDeps: PieceFetchDeps = { fetchCar, fetchCarViaHelia }
+
 export async function fetchAndComputePiece(
   cid: string,
   gateways: string[],
-  opts: FetchAndComputeOptions = {}
+  opts: FetchAndComputeOptions = {},
+  deps: PieceFetchDeps = defaultPieceFetchDeps
 ): Promise<PieceResult> {
   const expected = CID.parse(cid)
   const errors: string[] = []
@@ -144,7 +158,7 @@ export async function fetchAndComputePiece(
 
   for (const gateway of gateways) {
     try {
-      const { url, body } = await fetchCar(gateway, cid)
+      const { url, body } = await deps.fetchCar(gateway, cid)
       const { pieceCid, rawSize, sha256, roots } = await computePiece(body)
 
       const rootMatch = roots.some((r) => r.equals(expected) || r.toString() === cid)
@@ -173,7 +187,7 @@ export async function fetchAndComputePiece(
   if (opts.ipfsFallback === true && shouldFallback(aggregated)) {
     try {
       log(`  ↻ ${cid} falling back via embedded ipfs node (gateways exhausted: ${aggregated})`)
-      const { body } = await fetchCarViaHelia(cid, { timeoutMs: opts.fallbackTimeoutMs })
+      const { body } = await deps.fetchCarViaHelia(cid, { timeoutMs: opts.fallbackTimeoutMs })
       const { pieceCid, rawSize, sha256, roots } = await computePiece(body)
       const rootMatch = roots.some((r) => r.equals(expected) || r.toString() === cid)
       if (!rootMatch) {
