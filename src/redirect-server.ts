@@ -123,7 +123,7 @@ export function startRedirectServer(db: MigrationDB, port: number): void {
   const server = createServer(makeRedirectHandler(db))
 
   server.listen(port, () => {
-    log(`foc-migrate redirect server on http://localhost:${port} (GET /piece/{pieceCidV2} -> 302 gateway CAR)`)
+    log(`ipfs2foc redirect server on http://localhost:${port} (GET /piece/{pieceCidV2} -> 302 gateway CAR)`)
     log(`Front this with a public HTTPS ingress (e.g. \`tailscale funnel ${port}\`, a Cloudflare tunnel, or a VPS reverse proxy) and pass that base to \`pdp-submit --source-base\`. See docs/ingress.md.`)
   })
 }

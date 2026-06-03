@@ -49,7 +49,7 @@ skills first.
 
 ## Skill index
 
-### Verification and integrity (foc-migrate / FOC specific)
+### Verification and integrity (ipfs2foc / FOC specific)
 
 - [`skills/verify-actual-behavior.md`](skills/verify-actual-behavior.md)
   Read source or run probes before asserting how an external API

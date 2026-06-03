@@ -1,6 +1,6 @@
-# User personas for foc-migrate
+# User personas for ipfs2foc
 
-foc-migrate moves already-pinned IPFS content onto Filecoin Onchain Cloud
+ipfs2foc moves already-pinned IPFS content onto Filecoin Onchain Cloud
 through Curio's PDP pull. Different operators run it under different disk,
 bandwidth, and time budgets. This doc maps those situations to concrete
 knob settings so a new operator can pick a profile and go.
@@ -102,7 +102,7 @@ defaults everywhere else.
 
 ## Laptop tester
 
-One-line: someone trying foc-migrate on a personal machine to confirm
+One-line: someone trying ipfs2foc on a personal machine to confirm
 it works end-to-end before committing real data to it.
 
 ### What setup looks like
@@ -205,7 +205,7 @@ of `:4322`. Funnel works here too if the VM is in your tailnet.
 
 ```bash
 node src/index.ts plan --cids full-catalog.csv --piece-size 32GiB --no-auto-pack
-node src/index.ts pack-cars --car-store /var/lib/foc-migrate/cars --pack-target-size 512MiB
+node src/index.ts pack-cars --car-store /var/lib/ipfs2foc/cars --pack-target-size 512MiB
 node src/index.ts redirect-serve --port 4322 &       # behind nginx/caddy on :443
 node src/index.ts pdp-submit \
   --source-base https://migrate.example.com \
@@ -257,7 +257,7 @@ size is unbounded.
 
 ```bash
 node src/index.ts plan --cids big-catalog.csv --piece-size 32GiB --no-auto-pack
-node src/index.ts pack-cars --car-store /data/foc-migrate/cars --pack-target-size 512MiB
+node src/index.ts pack-cars --car-store /data/ipfs2foc/cars --pack-target-size 512MiB
 node src/index.ts redirect-serve --port 4322 &       # funnel or cloudflared
 node src/index.ts pdp-submit \
   --source-base https://<your-public-host> \

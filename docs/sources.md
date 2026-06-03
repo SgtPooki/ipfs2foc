@@ -3,7 +3,7 @@
 Snapshot: 2026-05-28. Provider behavior drifts; if a row here disagrees with
 what `probe` reports today, open an issue.
 
-`foc-migrate` pulls each CID as a deterministic trustless CAR from an HTTPS
+`ipfs2foc` pulls each CID as a deterministic trustless CAR from an HTTPS
 gateway. The source gateway must serve `/ipfs/{cid}?format=car&dag-scope=all`
 with bytes that re-hash to the requested CID. Reassembled-file responses do
 not work; the provider re-validates the CAR against the PieceCID on add.
@@ -14,8 +14,8 @@ Use `probe` against any candidate before planning a run:
 node src/index.ts probe <cid> --gateway https://<your-gateway>
 ```
 
-A future `foc-migrate analyze` subcommand (see
-[#2](https://github.com/SgtPooki/foc-migrate/issues/2)) will sweep a CID list
+A future `ipfs2foc analyze` subcommand (see
+[#2](https://github.com/SgtPooki/ipfs2foc/issues/2)) will sweep a CID list
 against a gateway and report the pass rate. Until then, `probe` on a sample is
 the check.
 

@@ -1,4 +1,4 @@
-# foc-migrate
+# ipfs2foc
 
 Migrate already-pinned IPFS CIDs onto **Filecoin Onchain Cloud (FOC)** without
 re-chunking. Each original CID stays byte-for-byte intact and individually

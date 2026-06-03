@@ -125,7 +125,7 @@ export function startServer(db: MigrationDB, runner: Runner, port: number, gas?:
   })
 
   server.listen(port, () => {
-    log(`foc-migrate dashboard on http://localhost:${port}`)
+    log(`ipfs2foc dashboard on http://localhost:${port}`)
   })
 }
 
@@ -147,7 +147,7 @@ const DASHBOARD_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>foc-migrate</title>
+<title>ipfs2foc</title>
 <style>
   :root { color-scheme: light dark; }
   body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 1.5rem; max-width: 60rem; }
@@ -168,7 +168,7 @@ const DASHBOARD_HTML = `<!doctype html>
 </style>
 </head>
 <body>
-<h1>foc-migrate dashboard</h1>
+<h1>ipfs2foc dashboard</h1>
 
 <div class="row">
   <span class="state pill" id="state">…</span>

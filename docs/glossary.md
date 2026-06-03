@@ -1,6 +1,6 @@
 # Glossary
 
-Operator-level definitions for the terms foc-migrate uses without inline
+Operator-level definitions for the terms ipfs2foc uses without inline
 explanation. For protocol depth, follow the linked specs and contracts.
 
 ## Aggregate piece commitment

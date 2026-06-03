@@ -28,7 +28,7 @@ Body, in order, each as a short paragraph:
 
 - **Description:** the dataset list omits any dataset created through the migration path; manual queries against the DB show the row exists with `status = committed`.
 - **Impact:** operators cannot see migrated datasets in the UI; they assume the migration silently dropped them.
-- **Steps to Reproduce:** 1. run `foc-migrate plan --cids cids.txt`, 2. run `foc-migrate pdp-submit ...`, 3. open the dataset list.
+- **Steps to Reproduce:** 1. run `ipfs2foc plan --cids cids.txt`, 2. run `ipfs2foc pdp-submit ...`, 3. open the dataset list.
 - **Expected:** the migrated dataset appears with status `committed`.
 - **Actual:** the list is empty.
 - **Environment:** Node 26, sqlite default DB, mainnet.

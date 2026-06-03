@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * foc-migrate CLI.
+ * ipfs2foc CLI.
  *
  * Subcommands:
  *   probe   <cid> [--gateway URL]...        Verify a gateway serves deterministic trustless CARs.
@@ -45,30 +45,30 @@ import { log, parseCidList, parsePositiveInt, parseSize } from './util.ts'
 
 const DEFAULT_DB = './migrate.db'
 
-const USAGE = `foc-migrate — migrate pinned IPFS CIDs to FOC without re-chunking
+const USAGE = `ipfs2foc — migrate pinned IPFS CIDs to FOC without re-chunking
 
 Usage:
-  foc-migrate probe  <cid> [--gateway URL]...
-  foc-migrate commp  <cid> [--gateway URL]...
-  foc-migrate plan   --cids <file> [--db <file>] [--gateway URL]... [--piece-size 32GiB]
+  ipfs2foc probe  <cid> [--gateway URL]...
+  ipfs2foc commp  <cid> [--gateway URL]...
+  ipfs2foc plan   --cids <file> [--db <file>] [--gateway URL]... [--piece-size 32GiB]
                      [--concurrency 8]
-  foc-migrate status [--db <file>] [--json]
-  foc-migrate serve  [--db <file>] [--cids <file>] [--gateway URL]... [--piece-size 32GiB]
+  ipfs2foc status [--db <file>] [--json]
+  ipfs2foc serve  [--db <file>] [--cids <file>] [--gateway URL]... [--piece-size 32GiB]
                      [--concurrency 8] [--port 4321] [--network mainnet|calibration] [--max-base-fee N]
-  foc-migrate gas    [--network mainnet|calibration] [--rpc-url URL] [--max-base-fee N]
-  foc-migrate redirect-serve [--db <file>] [--port 4322] [--ingress funnel|cloudflared]
-  foc-migrate create-data-set --provider-id <id> [--network mainnet|calibration] [--cdn]
+  ipfs2foc gas    [--network mainnet|calibration] [--rpc-url URL] [--max-base-fee N]
+  ipfs2foc redirect-serve [--db <file>] [--port 4322] [--ingress funnel|cloudflared]
+  ipfs2foc create-data-set --provider-id <id> [--network mainnet|calibration] [--cdn]
                      (uses PRIVATE_KEY env)
-  foc-migrate pdp-submit --data-set-id <id> --source-base <https-url> [--db <file>]
+  ipfs2foc pdp-submit --data-set-id <id> --source-base <https-url> [--db <file>]
                      [--network mainnet|calibration] [--max-in-flight 4] [--max-base-fee N] [--pull-batch 32]
                      (uses PRIVATE_KEY env)
-  foc-migrate report --data-set-id <id> [--db <file>] [--network mainnet|calibration] [--json]
+  ipfs2foc report --data-set-id <id> [--db <file>] [--network mainnet|calibration] [--json]
                      [--check-ipni <delegated-routing-url>] [--ipni-sample 100|--ipni-all] [--ipni-concurrency 8]
-  foc-migrate pack-cars --car-store <dir> [--db <file>] [--gateway URL]...
+  ipfs2foc pack-cars --car-store <dir> [--db <file>] [--gateway URL]...
                      [--pack-target-size 512MiB] [--fetch-concurrency 4]
-  foc-migrate reset-failed-aggregates [--db <file>] [--network mainnet|calibration]
-  foc-migrate retry-unconfirmed-aggregates [--db <file>] [--network mainnet|calibration]
-  foc-migrate analyze [--cids <file>] [--db <file>] [--car-store <dir>] [--gateway URL]
+  ipfs2foc reset-failed-aggregates [--db <file>] [--network mainnet|calibration]
+  ipfs2foc retry-unconfirmed-aggregates [--db <file>] [--network mainnet|calibration]
+  ipfs2foc analyze [--cids <file>] [--db <file>] [--car-store <dir>] [--gateway URL]
                      [--sample 100|--all] [--probe-concurrency 8] [--bw-target URL]
                      [--network mainnet|calibration] [--json]
 
