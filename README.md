@@ -71,14 +71,21 @@ you target (default `mainnet`; pass `--network calibration` for the testnet).
   FilecoinPay deposit, FilecoinWarmStorageService operator approval. These three
   steps happen once per payer; the storage provider pays gas for everything it
   submits on chain (createDataSet, AddPieces, proof of possession).
-- **USDFC** deposited into the FilecoinPay contract, with FWSS approved as a
-  payments operator with sufficient `rateAllowance` and `lockupAllowance`, and a
-  funded balance that covers the minimum lockup plus a one-time sybil fee.
-  `create-data-set` reverts otherwise. [`filecoin-pin`](https://github.com/FilOzone/filecoin-pin)
-  automates the approve / deposit / operator-approval calls from its CLI or as a
-  library. The [Synapse SDK](https://github.com/FilOzone/synapse-sdk) `Payments`
-  helper exposes the same calls directly. PDP Scan
-  (`https://pdp.vxb.ai/{network}`) shows the resulting account state.
+- **Payment setup**: deposit USDFC into Filecoin Pay and approve FWSS as a
+  payments operator with enough rate and lockup allowance, plus the minimum
+  lockup and one-time sybil fee. `create-data-set` reverts without it.
+  [`filecoin-pin`](https://github.com/filecoin-project/filecoin-pin) does the
+  deposit and approvals in one command:
+
+  ```bash
+  export PRIVATE_KEY=0x...
+  npx filecoin-pin@latest payments setup --auto    # add --network calibration for the testnet
+  npx filecoin-pin@latest payments status          # confirm the approvals and balance
+  ```
+
+  The [Synapse SDK](https://github.com/FilOzone/synapse-sdk) `Payments` helper
+  exposes the same calls directly, and PDP Scan (`https://pdp.vxb.ai/{network}`)
+  shows the resulting account state.
 - **Provider id**: choose a PDP-capable provider from the SP registry. PDP Scan
   lists registered providers at `https://pdp.vxb.ai/{network}/providers`; pass
   that numeric id as `--provider-id` to `create-data-set`. Skip this step if you
@@ -94,6 +101,9 @@ concurrently in separate terminals.
 
 ```bash
 export PRIVATE_KEY=0x...
+
+# One-time payer setup: deposit USDFC and approve FWSS as a payments operator.
+npx filecoin-pin@latest payments setup --auto
 
 # 0. (Once per provider) Provision a data set with withIPFSIndexing. Note the
 #    printed `dataSetId`; reuse it in steps 4 and 5.

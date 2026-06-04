@@ -15,9 +15,13 @@ known-good path.
 - **Node 26+** and ipfs2foc installed (`npm install -g ipfs2foc`, or
   `node src/index.ts` from a clone).
 - A **calibration wallet** exported as `PRIVATE_KEY` (`0x` + 64 hex), funded with
-  calibration FIL and USDFC, with FilecoinWarmStorageService approved as a
-  payments operator. The [Prerequisites](../README.md#prerequisites) section
-  links the tools that automate this.
+  calibration FIL and USDFC. Run the one-time payer setup (deposit + approvals):
+
+  ```bash
+  export PRIVATE_KEY=0x...
+  npx filecoin-pin@latest payments setup --auto --network calibration
+  npx filecoin-pin@latest payments status --network calibration
+  ```
 - A **calibration provider id** from PDP Scan
   (`https://pdp.vxb.ai/calibration/providers`).
 - One **public CID** that resolves over `trustless-gateway.link`. Any small file
