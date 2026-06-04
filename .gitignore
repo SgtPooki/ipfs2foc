@@ -18,3 +18,6 @@ out/
 
 # Local investigation / peer-review drafts; never committed
 .research/
+
+# build output
+dist/

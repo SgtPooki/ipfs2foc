@@ -20,10 +20,10 @@
     "node": ">=26"
   },
   "bin": {
-    "ipfs2foc": "src/index.ts"
+    "ipfs2foc": "dist/index.js"
   },
   "files": [
-    "src",
+    "dist",
     "docs",
     "README.md",
     "SECURITY.md",
@@ -31,10 +31,10 @@
   ],
   "scripts": {
     "start": "node src/index.ts",
-    "probe": "node src/index.ts probe",
-    "commp": "node src/index.ts commp",
-    "plan": "node src/index.ts plan",
-    "test": "node --test"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@chainsafe/libp2p-noise": "^17.0.0",
