@@ -123,8 +123,11 @@ export interface AggregateRow {
 
 export class MigrationDB {
   #db: DatabaseSync
+  /** The sqlite file path this instance opened, so callers can echo it back. */
+  readonly path: string
 
   constructor(path: string) {
+    this.path = path
     this.#db = new DatabaseSync(path)
     // busy_timeout must come before any other exec: even setting WAL needs
     // the write lock, and a sibling process holding it will error out the

@@ -135,6 +135,7 @@ function status(db: MigrationDB, runner: Runner): unknown {
     active: runner.active,
     gateways: runner.gateways,
     aggregateSizeBytes: runner.aggregateSizeBytes.toString(),
+    dbPath: db.path,
     lastError: runner.lastError,
     counts: db.counts(),
     aggregates: db.aggregates(),
@@ -280,6 +281,17 @@ const DASHBOARD_HTML = `<!doctype html>
   .ferr { color: var(--red); font-size: .73rem; word-break: break-word; }
   .empty { color: var(--faint); font-size: .76rem; padding: .4rem .2rem; }
 
+  /* next steps */
+  .note { color: var(--muted); font-size: .76rem; line-height: 1.65; margin: 0 0 .9rem; }
+  .note code { font-family: var(--mono); font-size: .72rem; color: var(--amber); }
+  ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: flex; flex-direction: column; gap: .55rem; }
+  ol.steps li { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; counter-increment: s; }
+  ol.steps li::before { content: counter(s); font-family: var(--label); font-size: .56rem; color: var(--signal); border: 1px solid var(--line-2); border-radius: .3rem; padding: .14rem .42rem; flex: none; }
+  .cmd { font-family: var(--mono); font-size: .75rem; color: var(--text); background: var(--ink); border: 1px solid var(--line-2); border-radius: .35rem; padding: .34rem .55rem; cursor: pointer; word-break: break-all; transition: border-color .15s, color .15s; }
+  .cmd:hover { border-color: var(--signal); color: var(--signal); }
+  .cmd.copied { border-color: var(--green); color: var(--green); }
+  .hint { color: var(--faint); font-size: .68rem; }
+
   /* footer */
   .foot { display: flex; gap: .7rem; flex-wrap: wrap; align-items: center; margin-top: 1.3rem; font-size: .68rem; color: var(--faint); letter-spacing: .04em; }
   .foot .sep { color: var(--line-2); }
@@ -345,6 +357,12 @@ const DASHBOARD_HTML = `<!doctype html>
     <div class="empty" id="aggEmpty">No aggregates planned yet. Add CIDs to begin.</div>
   </section>
 
+  <section class="panel" id="nextSteps" style="display:none; animation-delay:.14s">
+    <div class="panel-h"><span class="h-label">commit on chain</span><span class="h-meta" id="nextMeta"></span></div>
+    <p class="note">This dashboard runs the commP + packing stage. Putting aggregates on chain is done from the CLI — those commands sign with <code>PRIVATE_KEY</code> and need a public HTTPS ingress. Default network is <code>mainnet</code>; add <code>--network calibration</code> for the testnet. Click a command to copy.</p>
+    <ol class="steps" id="steps"></ol>
+  </section>
+
   <div class="grid2">
     <section class="panel" style="animation-delay:.18s">
       <div class="panel-h"><span class="h-label">add cids</span></div>
@@ -399,6 +417,7 @@ function esc(s) { return String(s).replace(/[<>&"']/g, function (c) { return { '
 function trunc(s) { s = String(s); return s.length > 30 ? s.slice(0, 14) + '…' + s.slice(-10) : s }
 function fmtSize(b) { const n = Number(b); if (!n) return '—'; const g = n / 1073741824; return g >= 1 ? g.toFixed(0) + ' GiB' : (n / 1048576).toFixed(0) + ' MiB' }
 function copyCid(el) { if (navigator.clipboard) navigator.clipboard.writeText(el.dataset.full).then(function () { el.classList.add('copied'); setTimeout(function () { el.classList.remove('copied') }, 900) }) }
+function copyCmd(el) { if (navigator.clipboard) navigator.clipboard.writeText(el.dataset.cmd).then(function () { el.classList.add('copied'); setTimeout(function () { el.classList.remove('copied') }, 900) }) }
 const prev = {}
 function setNum(id, val) {
   const el = document.getElementById(id); if (!el) return
@@ -445,6 +464,24 @@ function refresh() {
     }).join('')
     document.getElementById('aggs').innerHTML = aggs
     document.getElementById('aggEmpty').style.display = s.aggregates.length ? 'none' : 'block'
+    const db = s.dbPath || 'migrate.db'
+    const toCommit = s.aggregates.filter(function (a) { return a.status !== 'committed' && a.status !== 'failed' }).length
+    const ns = document.getElementById('nextSteps')
+    if (toCommit > 0) {
+      ns.style.display = ''
+      document.getElementById('nextMeta').textContent = toCommit + ' aggregate(s) to commit'
+      const cmds = [
+        ['ipfs2foc create-data-set --provider-id <id>', 'once per provider · skip if reusing a data set'],
+        ['ipfs2foc redirect-serve --db ' + db + ' --ingress cloudflared --port 4322', 'terminal A · leave running'],
+        ['ipfs2foc pdp-submit --db ' + db + ' --data-set-id <id> --source-base https://<host>', 'terminal B'],
+        ['ipfs2foc report --db ' + db + ' --data-set-id <id>', 'confirm on chain']
+      ]
+      document.getElementById('steps').innerHTML = cmds.map(function (p) {
+        return '<li><span class="cmd" data-cmd="' + esc(p[0]) + '" title="click to copy" onclick="copyCmd(this)">' + esc(p[0]) + '</span><em class="hint">' + esc(p[1]) + '</em></li>'
+      }).join('')
+    } else {
+      ns.style.display = 'none'
+    }
     const fl = s.failures || []
     document.getElementById('failMeta').textContent = fl.length
     document.getElementById('fails').innerHTML = fl.map(function (f) {
