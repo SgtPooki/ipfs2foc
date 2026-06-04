@@ -415,7 +415,7 @@ function refresh() {
     document.getElementById('state').textContent = st
     document.getElementById('live').dataset.state = st
     const running = st === 'running', paused = st === 'paused'
-    document.getElementById('btn-start').disabled = running || paused
+    document.getElementById('btn-start').disabled = running || paused || c.pending <= 0
     document.getElementById('btn-pause').disabled = !running
     document.getElementById('btn-resume').disabled = !paused
     document.getElementById('btn-retry').disabled = c.failed <= 0
