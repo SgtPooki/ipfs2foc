@@ -18,7 +18,7 @@ jobs:
       # Opens/updates the release PR, and on merge cuts a GitHub release + tag.
       # Versioning stays pre-1.0: bump-minor-pre-major in release-please-config.json
       # bumps the minor on breaking changes instead of the major.
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -31,9 +31,9 @@ jobs:
       contents: read
       id-token: write # OIDC trusted publishing; provenance is automatic
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '26'
           registry-url: 'https://registry.npmjs.org'
