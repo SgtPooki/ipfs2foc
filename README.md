@@ -264,6 +264,12 @@ ipfs2foc retry-unconfirmed-aggregates [--db migrate.db] [--network mainnet|calib
   `--piece-size` aggregate budget. A CAR above the provider's per-piece pull
   limit (~1 GiB raw) cannot be migrated as one piece either; hold it out of the
   run until re-chunking is supported.
+- **`pdp-submit` skips an aggregate: `sub-piece(s) below provider min piece size`.**
+  In the single-asset path each source CID is its own sub-piece, and the provider
+  enforces a minimum piece size (commonly 1 MiB). CIDs whose CAR pads below that
+  floor cannot go through the passthrough path on that provider — use the
+  multi-asset path (`plan --no-auto-pack` then `pack-cars --pack-target-size`
+  at or above the provider minimum) to batch them into a large enough piece.
 - **Submission pauses on `spike`.** The network base fee is above `--max-base-fee`.
   `pdp-submit` waits out the congestion; check with `ipfs2foc gas`.
 
