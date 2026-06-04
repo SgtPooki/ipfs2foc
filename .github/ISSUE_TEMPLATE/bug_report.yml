@@ -1,0 +1,50 @@
+name: Bug report
+description: Something ipfs2foc did wrong during a migration
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran, in order. Redact PRIVATE_KEY and any host URLs you don't want public.
+      placeholder: |
+        1. ipfs2foc plan --cids cids.txt
+        2. ipfs2foc pdp-submit --data-set-id 42 --source-base https://...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `ipfs2foc --version` (or the git commit).
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network
+      options:
+        - mainnet
+        - calibration
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: Output of `node --version` (ipfs2foc requires >= 26).
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / status
+      description: Relevant stderr lines and `ipfs2foc status --json` output. Logs are code-formatted automatically.
+      render: shell

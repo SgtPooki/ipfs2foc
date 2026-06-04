@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or feedback
+    url: https://github.com/SgtPooki/ipfs2foc/discussions
+    about: Trying ipfs2foc out? Ask questions and share feedback in Discussions.
+  - name: Gateway not serving trustless CARs
+    url: https://github.com/SgtPooki/ipfs2foc/blob/main/docs/sources.md
+    about: Check the per-gateway notes and the probe command first.

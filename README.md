@@ -99,6 +99,10 @@ Complete **Prerequisites** above first. Default network is **mainnet**; pass
 `--network calibration` for the testnet. `redirect-serve` and `pdp-submit` run
 concurrently in separate terminals.
 
+> **First time?** Rehearse the whole flow on the testnet with the
+> [calibration tutorial](docs/tutorial-first-migration.md) before spending real
+> funds on mainnet.
+
 ```bash
 export PRIVATE_KEY=0x...
 
