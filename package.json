@@ -20,7 +20,7 @@
     "node": ">=26"
   },
   "bin": {
-    "ipfs2foc": "dist/index.js"
+    "ipfs2foc": "dist/cli.js"
   },
   "files": [
     "dist",

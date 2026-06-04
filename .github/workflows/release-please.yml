@@ -39,8 +39,9 @@ jobs:
       # Trusted publishing needs npm >= 11.5.1; upgrade regardless of what ships.
       - run: npm install -g npm@latest
       - run: npm ci
-      - run: npx tsc --noEmit
+      - run: npm run typecheck
       - run: npm test
+      - run: npm run build
       # No NPM_TOKEN. Authenticates via OIDC against the Trusted Publisher
       # configured on npmjs.com for this repo + workflow. Provenance is automatic.
       # Requires a one-time manual publish to create the package first
