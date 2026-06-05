@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { computePiece, type PieceResult } from './commp.ts'
 import { buildManifest, downloadManifest } from './manifest.ts'
-import { connectWallet, NETWORKS, networkOf, type WalletState } from './wallet.ts'
+import { connectWallet, NETWORKS, networkOf, refreshWallet, switchToCalibration, type WalletState } from './wallet.ts'
 
 const DEFAULT_RELAY = 'https://ipfs2foc-relay.russell-3c4.workers.dev'
 const DEFAULT_GATEWAY = 'https://trustless-gateway.link'
@@ -70,6 +70,16 @@ export default function App() {
     setWalletError(null)
     try {
       setWallet(await connectWallet())
+    } catch (err) {
+      setWalletError(err instanceof Error ? err.message : String(err))
+    }
+  }, [])
+
+  const switchNet = useCallback(async () => {
+    setWalletError(null)
+    try {
+      await switchToCalibration()
+      setWallet(await refreshWallet())
     } catch (err) {
       setWalletError(err instanceof Error ? err.message : String(err))
     }
@@ -150,7 +160,14 @@ export default function App() {
               <span className={`chip ${onCalibration ? 'chip-ok' : 'chip-warn'}`}>
                 {walletNetwork ? NETWORKS[walletNetwork].label : `chain ${wallet.chainId}`}
               </span>
-              {!onCalibration && <span className="hint">switch your wallet to Calibration (314159)</span>}
+              {!onCalibration && (
+                <>
+                  <button className="btn small" onClick={switchNet} type="button">
+                    Switch to Calibration
+                  </button>
+                  <span className="hint">optional now — the prepare step below works on any network</span>
+                </>
+              )}
             </div>
           )}
           {walletError && <span className="err-text">{walletError}</span>}

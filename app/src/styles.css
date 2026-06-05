@@ -181,6 +181,10 @@ body {
   opacity: 0.4;
   cursor: not-allowed;
 }
+.btn.small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
 .btn.primary {
   background: linear-gradient(180deg, #123e39, #0c2a27);
   border-color: var(--accent-deep);
