@@ -32,7 +32,7 @@
   ],
   "scripts": {
     "start": "node src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc --noEmit && tsup",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -74,6 +74,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.11",
     "@types/node": "^25.9.1",
+    "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "wrangler": "^4.98.0"
   }
