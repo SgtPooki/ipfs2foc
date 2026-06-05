@@ -58,8 +58,9 @@ Usage:
   ipfs2foc redirect-serve [--db <file>] [--port 4322] [--ingress funnel|cloudflared]
   ipfs2foc create-data-set --provider-id <id> [--network mainnet|calibration] [--cdn]
                      (uses PRIVATE_KEY env)
-  ipfs2foc pdp-submit --data-set-id <id> --source-base <https-url> [--db <file>]
+  ipfs2foc pdp-submit --data-set-id <id> (--source-base <https-url> | --source-relay <https-url>) [--db <file>]
                      [--network mainnet|calibration] [--max-in-flight 4] [--max-base-fee N] [--pull-batch 32]
+                     (--source-base: your own redirect-serve; --source-relay: a shared stateless relay, passthrough only)
                      (uses PRIVATE_KEY env)
   ipfs2foc report --data-set-id <id> [--db <file>] [--network mainnet|calibration] [--json]
                      [--check-ipni <delegated-routing-url>] [--ipni-sample 100|--ipni-all] [--ipni-concurrency 8]
@@ -419,6 +420,7 @@ async function cmdPdpSubmit(argv: string[]): Promise<void> {
       db: { type: 'string', default: DEFAULT_DB },
       'data-set-id': { type: 'string' },
       'source-base': { type: 'string' },
+      'source-relay': { type: 'string' },
       network: { type: 'string', default: 'mainnet' },
       'rpc-url': { type: 'string' },
       'max-in-flight': { type: 'string', default: '4' },
@@ -430,8 +432,11 @@ async function cmdPdpSubmit(argv: string[]): Promise<void> {
   if (values['data-set-id'] == null) {
     throw new Error('pdp-submit requires --data-set-id <id>')
   }
-  if (values['source-base'] == null) {
-    throw new Error('pdp-submit requires --source-base <public https base of redirect-serve, e.g. https://host.ts.net>')
+  if ((values['source-base'] == null) === (values['source-relay'] == null)) {
+    throw new Error(
+      'pdp-submit requires exactly one of --source-base <https base of your redirect-serve> ' +
+        'or --source-relay <https base of a stateless redirect relay, e.g. https://ipfs2foc-relay.<sub>.workers.dev>'
+    )
   }
   const key = process.env.PRIVATE_KEY
   if (key == null || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
@@ -446,7 +451,8 @@ async function cmdPdpSubmit(argv: string[]): Promise<void> {
       network,
       rpcUrl: values['rpc-url'],
       dataSetId: parsePositiveInt(values['data-set-id'] as string, '--data-set-id'),
-      sourceBase: values['source-base'] as string,
+      sourceBase: values['source-base'] as string | undefined,
+      sourceRelay: values['source-relay'] as string | undefined,
       maxInFlight: parsePositiveInt(values['max-in-flight'] as string, '--max-in-flight'),
       maxBaseFee: values['max-base-fee'] == null ? DEFAULT_MAX_BASE_FEE : BigInt(values['max-base-fee']),
       pollMs: parsePositiveInt(values['poll-seconds'] as string, '--poll-seconds') * 1000,

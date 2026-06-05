@@ -21,6 +21,7 @@ import { calibration, mainnet, Synapse } from '@filoz/synapse-sdk'
 import { CID } from 'multiformats/cid'
 import { type Hex, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
+import { canonicalCid, relayPullUrl } from './car-url.ts'
 import type { MigrationDB } from './db.ts'
 import { classifyBaseFee, getBaseFee, resolveRpcUrl } from './gas.ts'
 import { formatBytes, formatDuration, formatRate, Timer } from './metrics.ts'
@@ -53,8 +54,20 @@ export interface SubmitPdpOptions {
   network: 'calibration' | 'mainnet'
   rpcUrl?: string
   dataSetId: number
-  /** Public base URL of the redirect server, e.g. https://host.ts.net */
-  sourceBase: string
+  /**
+   * Public base URL of an operator-run redirect server, e.g. https://host.ts.net.
+   * The provider is pointed at `{sourceBase}/piece/{pcidv2}`. Mutually exclusive
+   * with {@link sourceRelay}.
+   */
+  sourceBase?: string
+  /**
+   * Public base URL of a shared, stateless redirect relay (e.g. the hosted
+   * Cloudflare Worker). When set, the per-piece pull URL is the path-encoded
+   * `{sourceRelay}/r/{gatewayHost}/{cid}/piece/{pcidv2}` so no per-operator
+   * server is needed. Passthrough sub-pieces only — assembled CARs have no
+   * gateway URL to relay to.
+   */
+  sourceRelay?: string
   maxInFlight: number
   maxBaseFee: bigint
   pollMs: number
@@ -68,6 +81,31 @@ export interface SubmitPdpOptions {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * The pull `sourceUrl` the provider is handed for one sub-piece. Either the
+ * operator's redirect server (`{sourceBase}/piece/{pcid}`) or the shared
+ * stateless relay (`{sourceRelay}/r/{gatewayHost}/{cid}/piece/{pcid}`, derived
+ * from the sub-piece's gateway CAR URL so the relay can rebuild the exact bytes
+ * the piece was committed over).
+ */
+function pullSourceUrl(opts: SubmitPdpOptions, member: { pieceCid: string; url: string }): string {
+  if (opts.sourceRelay != null && opts.sourceRelay !== '') {
+    if (member.url === '') {
+      throw new Error(
+        `sub-piece ${member.pieceCid} has no gateway URL; assembled CARs cannot be served via --source-relay (use --source-base with redirect-serve)`
+      )
+    }
+    const carUrl = new URL(member.url)
+    const cid = carUrl.pathname.replace(/^\/ipfs\//, '')
+    const canonical = canonicalCid(cid)
+    if (canonical == null) {
+      throw new Error(`source CID ${cid} is not a canonical CIDv1; the relay requires it (re-encode before plan)`)
+    }
+    return relayPullUrl(opts.sourceRelay, carUrl.hostname, canonical, member.pieceCid)
+  }
+  return `${(opts.sourceBase ?? '').replace(/\/+$/, '')}/piece/${member.pieceCid}`
+}
 
 /**
  * Give up waiting for an AddPieces tx to confirm after this long. The tx hash is
@@ -167,10 +205,14 @@ export async function runSubmitPdp(
   const pullStallTimeoutMs = opts.pullStallTimeoutMs ?? PULL_STALL_TIMEOUT_MS
 
   const { ctx, pdp, minPieceSize, serviceURL } = await deps.setup(opts, rpcUrl)
-  const base = opts.sourceBase.replace(/\/+$/, '')
+
+  const pullSourceDesc =
+    opts.sourceRelay != null && opts.sourceRelay !== ''
+      ? `${opts.sourceRelay.replace(/\/+$/, '')}/r/{gateway}/{cid}/piece/{pcidv2}`
+      : `${(opts.sourceBase ?? '').replace(/\/+$/, '')}/piece/{pcidv2}`
 
   log(
-    `PDP submit to ${serviceURL} (data set ${opts.dataSetId}), pull source ${base}/piece/{pcidv2}, ` +
+    `PDP submit to ${serviceURL} (data set ${opts.dataSetId}), pull source ${pullSourceDesc}, ` +
       `provider min piece size ${minPieceSize} bytes`
   )
 
@@ -313,7 +355,7 @@ export async function runSubmitPdp(
       const pullBody = {
         extraData: pullExtra,
         dataSetId: opts.dataSetId,
-        pieces: batch.map((m) => ({ pieceCid: m.pieceCid, sourceUrl: `${base}/piece/${m.pieceCid}` })),
+        pieces: batch.map((m) => ({ pieceCid: m.pieceCid, sourceUrl: pullSourceUrl(opts, m) })),
       }
       try {
         let resp = await pullWithBackpressure(pdp, pullBody)

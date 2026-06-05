@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { handle, type RelayEnv } from '../relay/handler.ts'
-import { buildCarUrl } from '../src/car-url.ts'
+import { buildCarUrl, relayPullUrl } from '../src/car-url.ts'
 
 // Real values from the in-browser commP spike: a canonical CIDv1 source and the
 // PieceCID v2 computed over its CAR. CIDv0 sample is a well-known example CID.
@@ -83,6 +83,17 @@ test('strict path shape: wrong arity, trailing slash, missing /piece', () => {
 
 test('overlong path is rejected before parsing', () => {
   assert.equal(get(`/r/${HOST}/${'a'.repeat(600)}/piece/${PIECE_CID}`).status, 404)
+})
+
+test('submit-built relay URL parses back to the exact committed gateway CAR (build↔parse loop)', () => {
+  // What the submit side emits (relayPullUrl) must, when the relay parses it,
+  // 302 to the identical buildCarUrl the piece was committed over. This closes
+  // the loop between src/submit-pdp.ts and relay/handler.ts.
+  const built = relayPullUrl('https://relay.example', HOST, SOURCE_CID, PIECE_CID)
+  const path = new URL(built).pathname
+  const res = handle(new Request(`https://relay.example${path}`), {})
+  assert.equal(res.status, 302)
+  assert.equal(res.headers.get('location'), buildCarUrl(TRUSTED, SOURCE_CID))
 })
 
 test('method and routing guards', () => {

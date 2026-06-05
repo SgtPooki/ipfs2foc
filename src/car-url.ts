@@ -44,6 +44,21 @@ export function defaultGatewayHosts(): string[] {
 }
 
 /**
+ * Build the stateless redirect-relay pull URL:
+ * `{relayBase}/r/{gatewayHost}/{cid}/piece/{pieceCidV2}`.
+ *
+ * This is the single definition of the relay path shape — the submit side
+ * builds it here and the relay (`relay/handler.ts`) parses the same shape, so
+ * the two cannot drift. The relay reconstructs `buildCarUrl(gatewayHost, cid)`
+ * from the prefix, so the provider's pull lands on the exact bytes the piece was
+ * committed over; `pieceCid` is the suffix Curio's `ValidatePullSourceURL`
+ * requires.
+ */
+export function relayPullUrl(relayBase: string, gatewayHost: string, cid: string, pieceCid: string): string {
+  return `${relayBase.replace(/\/+$/, '')}/r/${gatewayHost}/${cid}/piece/${pieceCid}`
+}
+
+/**
  * Return `cid` iff it is already in canonical CIDv1 form — it parses and
  * round-trips to the byte-identical string. Returns null otherwise.
  *
