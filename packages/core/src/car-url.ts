@@ -82,3 +82,24 @@ export function canonicalCid(cid: string): string | null {
   if (parsed.version !== 1) return null
   return parsed.toString() === cid ? cid : null
 }
+
+/**
+ * Normalize any parseable CID to its canonical CIDv1 string (default base32).
+ * A CIDv0 (`Qm…`) is converted via `.toV1()`; an already-canonical CIDv1 is
+ * returned unchanged; a CIDv1 in another base is re-encoded to base32. Returns
+ * null only if the input doesn't parse as a CID.
+ *
+ * Use this to normalize user input BEFORE computing a commitment, so the CAR is
+ * fetched, committed, and later relayed all under the same canonical CIDv1 (the
+ * root CID lives in the CAR header, so a v0 vs v1 request yields different bytes
+ * — consistency end-to-end is what keeps the commitment byte-safe). The
+ * relay/validation path keeps using the strict {@link canonicalCid}, which must
+ * never re-encode: it has to match the exact string already committed over.
+ */
+export function toCanonicalCidV1(cid: string): string | null {
+  try {
+    return CID.parse(cid).toV1().toString()
+  } catch {
+    return null
+  }
+}

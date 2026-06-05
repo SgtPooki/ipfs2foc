@@ -7,7 +7,7 @@ import { CarBlockIterator } from '@ipld/car'
 import * as Hasher from '@web3-storage/data-segment/multihash'
 // Reuse the single source of truth (ipfs2foc-core) — never re-template these, or
 // the relay redirect would drift from the bytes commP is computed over.
-import { buildCarUrl, CAR_ACCEPT, canonicalCid, relayPullUrl } from 'ipfs2foc-core'
+import { buildCarUrl, CAR_ACCEPT, relayPullUrl, toCanonicalCidV1 } from 'ipfs2foc-core'
 import { CID } from 'multiformats/cid'
 import * as Raw from 'multiformats/codecs/raw'
 import * as Link from 'multiformats/link'
@@ -32,9 +32,11 @@ export async function computePiece(
   relayBase: string,
   onProgress?: (bytes: number) => void
 ): Promise<PieceResult> {
-  const canonical = canonicalCid(cidStr)
+  // Normalize to canonical CIDv1 (CIDv0 `Qm…` is converted automatically), then
+  // fetch/commit/relay all under that one form so the commitment stays byte-safe.
+  const canonical = toCanonicalCidV1(cidStr)
   if (canonical == null) {
-    throw new Error('not a canonical CIDv1 (the relay requires CIDv1; re-encode CIDv0 first)')
+    throw new Error('not a valid CID')
   }
   const expected = CID.parse(canonical)
   const url = buildCarUrl(gateway, canonical)

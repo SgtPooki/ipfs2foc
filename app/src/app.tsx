@@ -183,7 +183,7 @@ export default function App() {
         <textarea
           className="cid-input"
           onChange={(e) => setCidsText(e.target.value)}
-          placeholder={'bafybei…\nbafybei…  (one CIDv1 per line)'}
+          placeholder={'bafybei…\nQm…  (CIDv0 or CIDv1, one per line)'}
           spellCheck={false}
           value={cidsText}
         />
@@ -221,40 +221,45 @@ export default function App() {
               <span className="num">Size</span>
               <span>Pull URL</span>
             </div>
-            {rows.map((r) => (
-              <div className="trow" key={r.cid}>
-                <code className="mono dim" title={r.cid}>
-                  {short(r.cid)}
-                </code>
-                {r.state.phase === 'done' ? (
-                  <code className="mono" title={r.state.result.pieceCid}>
-                    {short(r.state.result.pieceCid)}
+            {rows.map((r) => {
+              // Show the canonical CIDv1 once computed (a `Qm…` input is converted),
+              // so the row reflects exactly what gets committed and relayed.
+              const shownCid = r.state.phase === 'done' ? r.state.result.cid : r.cid
+              return (
+                <div className="trow" key={r.cid}>
+                  <code className="mono dim" title={shownCid}>
+                    {short(shownCid)}
                   </code>
-                ) : r.state.phase === 'error' ? (
-                  <span className="err-text" title={r.state.message}>
-                    {short(r.state.message, 28, 0)}
+                  {r.state.phase === 'done' ? (
+                    <code className="mono" title={r.state.result.pieceCid}>
+                      {short(r.state.result.pieceCid)}
+                    </code>
+                  ) : r.state.phase === 'error' ? (
+                    <span className="err-text" title={r.state.message}>
+                      {short(r.state.message, 28, 0)}
+                    </span>
+                  ) : r.state.phase === 'working' ? (
+                    <span className="working">▍ {fmtBytes(r.state.bytes)}</span>
+                  ) : (
+                    <span className="dim">queued</span>
+                  )}
+                  <span className="num mono dim">
+                    {r.state.phase === 'done' ? fmtBytes(r.state.result.rawSize) : '—'}
                   </span>
-                ) : r.state.phase === 'working' ? (
-                  <span className="working">▍ {fmtBytes(r.state.bytes)}</span>
-                ) : (
-                  <span className="dim">queued</span>
-                )}
-                <span className="num mono dim">
-                  {r.state.phase === 'done' ? fmtBytes(r.state.result.rawSize) : '—'}
-                </span>
-                {r.state.phase === 'done' ? (
-                  <button
-                    className="copy"
-                    onClick={() => copy(r.state.phase === 'done' ? r.state.result.sourceUrl : '', r.cid)}
-                    type="button"
-                  >
-                    {copied === r.cid ? 'copied ✓' : 'copy'}
-                  </button>
-                ) : (
-                  <span className="dim">—</span>
-                )}
-              </div>
-            ))}
+                  {r.state.phase === 'done' ? (
+                    <button
+                      className="copy"
+                      onClick={() => copy(r.state.phase === 'done' ? r.state.result.sourceUrl : '', r.cid)}
+                      type="button"
+                    >
+                      {copied === r.cid ? 'copied ✓' : 'copy'}
+                    </button>
+                  ) : (
+                    <span className="dim">—</span>
+                  )}
+                </div>
+              )
+            })}
           </div>
           {results.length > 0 && (
             <div className="actions">
