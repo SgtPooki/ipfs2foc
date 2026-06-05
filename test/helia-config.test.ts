@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildLibp2pConfig, stopHeliaFallback } from '../src/helia-fallback.ts'
-import { fallbackFetch, stopVerifiedFetch } from '../src/verified-fetch.ts'
+import { fallbackHelia, stopVerifiedFetch } from '../src/verified-fetch.ts'
 
 // Regression guard for #18. The bitswap fallback node is assembled with a
 // hand-built, outbound-only libp2p (TCP + WebSockets) rather than libp2p's
@@ -31,12 +31,12 @@ test('libp2p config has no listen addresses (outbound-only, no webrtc-direct)', 
   assert.deepEqual(cfg.addresses?.listen ?? [], [])
 })
 
-test('bitswap-enabled verified-fetch node starts and stops without the node-datachannel crash', async () => {
+test('bitswap-enabled fallback node starts and stops without the node-datachannel crash', async () => {
   // The strongest #18 guard: the whole fallback path stands up and tears down.
-  // Building the node imports @helia/verified-fetch and the bitswap broker; a
+  // Building the node imports the bitswap broker and helia internals; a
   // WebRTC import creeping back in would crash here.
-  const fetch = await fallbackFetch(['https://trustless-gateway.link'])
-  assert.equal(typeof fetch, 'function')
+  const helia = await fallbackHelia(['https://trustless-gateway.link'])
+  assert.equal(typeof helia.blockstore.createSession, 'function')
   await stopVerifiedFetch()
   // stopHeliaFallback is the legacy entry point; it must be safe after teardown.
   await stopHeliaFallback()
