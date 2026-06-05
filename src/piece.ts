@@ -188,7 +188,7 @@ export async function fetchAndComputePiece(
   if (opts.ipfsFallback === true && shouldFallback(aggregated)) {
     try {
       log(`  ↻ ${cid} falling back via embedded ipfs node (gateways exhausted: ${aggregated})`)
-      const { body } = await deps.fetchCarViaHelia(cid, { timeoutMs: opts.fallbackTimeoutMs })
+      const { body } = await deps.fetchCarViaHelia(cid, { timeoutMs: opts.fallbackTimeoutMs, gateways })
       const { pieceCid, rawSize, sha256, roots } = await computePiece(body)
       const rootMatch = roots.some((r) => r.equals(expected) || r.toString() === cid)
       if (!rootMatch) {

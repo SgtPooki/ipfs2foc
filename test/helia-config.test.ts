@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildLibp2pConfig, getHelia, stopHeliaFallback } from '../src/helia-fallback.ts'
+import { buildLibp2pConfig, stopHeliaFallback } from '../src/helia-fallback.ts'
+import { fallbackFetch, stopVerifiedFetch } from '../src/verified-fetch.ts'
 
-// Regression guard for #18. The embedded fallback node is assembled by hand
-// from @libp2p/* + @helia/utils rather than helia's createHelia/libp2pDefaults,
-// because importing the `helia` barrel statically pulls @libp2p/webrtc →
-// node-datachannel, whose native binding is not prebuilt for Node 26 and throws
-// at import time. These tests fail the moment WebRTC re-enters the graph: either
-// buildLibp2pConfig() throws (a helia/libp2pDefaults import crept back in) or a
-// WebRTC transport / listen address reappears.
+// Regression guard for #18. The bitswap fallback node is assembled with a
+// hand-built, outbound-only libp2p (TCP + WebSockets) rather than libp2p's
+// browser defaults, which pull @libp2p/webrtc → node-datachannel. The native
+// binding now builds under pnpm, but the migrator only dials out, so WebRTC
+// stays out of the dialed transports. These tests fail the moment a WebRTC
+// transport or a listen address reappears in the config.
 
-test('libp2p config builds without pulling a native binding', async () => {
-  // Throws if @libp2p/webrtc → node-datachannel were back in the import graph.
+test('libp2p config builds without a WebRTC transport', async () => {
   const cfg = await buildLibp2pConfig()
   assert.ok(Array.isArray(cfg.transports) && cfg.transports.length === 2)
 })
@@ -32,9 +31,13 @@ test('libp2p config has no listen addresses (outbound-only, no webrtc-direct)', 
   assert.deepEqual(cfg.addresses?.listen ?? [], [])
 })
 
-test('embedded Helia node starts and stops without the node-datachannel crash', async () => {
+test('bitswap-enabled verified-fetch node starts and stops without the node-datachannel crash', async () => {
   // The strongest #18 guard: the whole fallback path stands up and tears down.
-  const helia = await getHelia()
-  assert.ok(helia.libp2p.peerId, 'expected a started libp2p node')
+  // Building the node imports @helia/verified-fetch and the bitswap broker; a
+  // WebRTC import creeping back in would crash here.
+  const fetch = await fallbackFetch(['https://trustless-gateway.link'])
+  assert.equal(typeof fetch, 'function')
+  await stopVerifiedFetch()
+  // stopHeliaFallback is the legacy entry point; it must be safe after teardown.
   await stopHeliaFallback()
 })
