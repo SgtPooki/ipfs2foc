@@ -24,3 +24,7 @@ dist/
 
 # wrangler local dev state (relay/)
 .wrangler/
+
+# app build + deps
+app/node_modules/
+app/dist/
