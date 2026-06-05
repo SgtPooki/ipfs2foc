@@ -46,8 +46,8 @@ the relay ignores it (the provider verifies it).
   rejected (valid hostnames and CIDv1s never need encoding); the path length is
   bounded.
 
-Built-in allowlist: the hosts in `DEFAULT_GATEWAYS` (`gateway.pinata.cloud`,
-`trustless-gateway.link`). Widen it by config via `ALLOWED_GATEWAY_HOSTS`
+Built-in allowlist: the hosts in `DEFAULT_GATEWAYS`
+(`trustless-gateway.link`). Widen it by config via `ALLOWED_GATEWAY_HOSTS`
 (comma-separated hostnames), not code.
 
 ### Operational notes

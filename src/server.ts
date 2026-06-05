@@ -371,7 +371,7 @@ const DASHBOARD_HTML = `<!doctype html>
     </section>
     <section class="panel" style="animation-delay:.24s">
       <div class="panel-h"><span class="h-label">gateways</span></div>
-      <input id="gateways" placeholder="https://gateway.pinata.cloud, https://trustless-gateway.link" />
+      <input id="gateways" placeholder="https://trustless-gateway.link" />
       <div class="actions"><button class="btn" onclick="setGateways()">Set gateways</button><span class="msg" id="gwMsg"></span></div>
       <div class="chips" id="gwList"></div>
     </section>

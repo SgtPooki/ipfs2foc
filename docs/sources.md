@@ -22,7 +22,7 @@ rate, sizes, and a throughput estimate. Use `probe` for a single CID and
 
 | Pinning provider | Trustless gateway URL pattern | Trustless CAR | Status |
 |---|---|---|---|
-| Pinata | `https://gateway.pinata.cloud` | yes | working; default in this repo |
+| Pinata | `https://gateway.pinata.cloud` | yes | working; pass with `--gateway` |
 | Protocol Labs trustless gateway | `https://trustless-gateway.link` | yes | working; default in this repo |
 | Filebase | `https://<bucket>.myfilebase.com/ipfs/<cid>` | per-bucket | probe required |
 | Storj | gateway-MT share link | per-share | probe required |

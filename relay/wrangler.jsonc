@@ -17,8 +17,8 @@
   "ratelimits": [{ "name": "RELAY_RATE_LIMIT", "namespace_id": "1", "simple": { "limit": 100, "period": 60 } }],
   "vars": {
     // Optional. Extra gateway hostnames to allow on top of the built-ins
-    // (gateway.pinata.cloud, trustless-gateway.link). Comma-separated, host
-    // only — no scheme, port, or path.
+    // (trustless-gateway.link). Comma-separated, host only — no scheme, port,
+    // or path.
     // "ALLOWED_GATEWAY_HOSTS": "ipfs.example.org"
   }
 }

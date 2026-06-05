@@ -15,8 +15,14 @@
 
 import { CID } from 'multiformats/cid'
 
-/** Gateways known to serve deterministic, spec-compliant trustless CARs. */
-export const DEFAULT_GATEWAYS = ['https://gateway.pinata.cloud', 'https://trustless-gateway.link']
+/**
+ * Gateways verified to serve deterministic, spec-compliant trustless CARs —
+ * byte-identical to the canonical dfs/dups=n serialization of the DAG, which
+ * the piece commitment depends on. Other gateways work via explicit
+ * `--gateway`; admission here requires the byte-identity check
+ * (`test/commp-piece-cid-regression.test.ts` pins it for this list).
+ */
+export const DEFAULT_GATEWAYS = ['https://trustless-gateway.link']
 
 export const CAR_ACCEPT = 'application/vnd.ipld.car'
 

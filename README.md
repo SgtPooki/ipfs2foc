@@ -52,11 +52,12 @@ node src/index.ts --help     # run directly; Node 26 strips the TypeScript types
 ## Requirements
 
 - **Node 26+** (uses the built-in `node:sqlite`).
-- A source that serves **deterministic trustless CARs**. Known working:
-  `gateway.pinata.cloud`, `trustless-gateway.link`. A gateway that returns
-  reassembled files instead of CARs does not work; `probe` reports which case a
-  gateway falls into. See [`docs/sources.md`](docs/sources.md) for per-provider
-  notes and probe commands.
+- A source that serves **deterministic trustless CARs**. The default is
+  `trustless-gateway.link`; others (for example `gateway.pinata.cloud`) work via
+  `--gateway`. A gateway that returns reassembled files instead of CARs does
+  not work; `probe` reports which case a gateway falls into. See
+  [`docs/sources.md`](docs/sources.md) for per-provider notes and probe
+  commands.
 
 ## Prerequisites
 
