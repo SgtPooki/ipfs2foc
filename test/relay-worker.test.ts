@@ -3,8 +3,9 @@ import { test } from 'node:test'
 import { handle, type RelayEnv } from '../relay/handler.ts'
 import { buildCarUrl, relayPullUrl } from '../src/car-url.ts'
 
-// Real values from the in-browser commP spike: a canonical CIDv1 source and the
-// PieceCID v2 computed over its CAR. CIDv0 sample is a well-known example CID.
+// Known-good values: a canonical CIDv1 source and the PieceCID v2 computed over
+// its CAR, matching test/commp-piece-cid-regression.test.ts. CID_V0 is a
+// well-known example CIDv0.
 const SOURCE_CID = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
 const PIECE_CID = 'bafkzcibdxzhqyefkufvnsmqlyrjyr3el6affnfo3l7ipfncjjzjl4hkaqhbaema3'
 const CID_V0 = 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'
