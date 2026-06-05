@@ -81,12 +81,21 @@ importers:
       '@biomejs/biome':
         specifier: 2.4.11
         version: 2.4.11
+      '@ipld/dag-cbor':
+        specifier: ^9.2.7
+        version: 9.2.7
+      '@ipld/dag-pb':
+        specifier: ^4.1.7
+        version: 4.1.7
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
       fr32-sha2-256-trunc254-padded-binary-tree-multihash:
         specifier: ^3.3.0
         version: 3.3.0
+      ipfs-unixfs-importer:
+        specifier: ^16.1.5
+        version: 16.1.5
       ipfs2foc-core:
         specifier: workspace:*
         version: link:packages/core

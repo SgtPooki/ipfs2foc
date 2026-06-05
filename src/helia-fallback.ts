@@ -3,10 +3,11 @@
  *
  * The migrator's normal source is a configured trustless gateway, fetched
  * directly as a CAR (`gateway.ts`). When every gateway fails with a retriable
- * category, this module retrieves the same CID over a bitswap-enabled
- * verified-fetch and re-assembles the CAR locally. Those bytes are
- * migrator-controlled — the provider cannot pull a bitswap walk — so they feed
- * the same piece-commitment path but are recorded as `source==='helia'`, which
+ * category, this module retrieves the same CID's blocks over a bitswap-enabled
+ * Helia node and serializes the CAR locally (`car-export.ts`, canonical
+ * framing, bounded-lookahead prefetch). Those bytes are migrator-controlled —
+ * the provider cannot pull a bitswap walk — so they feed the same
+ * piece-commitment path but are recorded as `source==='helia'`, which
  * `recordPieceOutcome` treats as unservable by the provider pull.
  *
  * The bitswap node is built lazily on first fallback hit, so runs that never
@@ -14,16 +15,15 @@
  * down by `stopVerifiedFetch`.
  *
  * Outbound-only libp2p: no listen addresses, TCP + WebSockets only, no WebRTC.
- * The native `node-datachannel` binding is built by pnpm so
- * `@helia/verified-fetch` imports cleanly, but the migrator only dials out, so
- * WebRTC stays out of the dialed transports.
  *
  * `buildLibp2pConfig` is exported so `test/helia-config.test.ts` can assert the
  * WebRTC-free shape without standing up a node.
  */
 
+import { CID } from 'multiformats/cid'
+import { exportCanonicalCarStream } from './car-export.ts'
 import { DEFAULT_GATEWAYS } from './gateway.ts'
-import { CAR_ACCEPT_FRAMED, fallbackFetch, stopVerifiedFetch } from './verified-fetch.ts'
+import { fallbackHelia, stopVerifiedFetch } from './verified-fetch.ts'
 
 /**
  * Build the libp2p init for the bitswap fallback node.
@@ -58,30 +58,29 @@ export async function buildLibp2pConfig(): Promise<Record<string, any>> {
 export const DEFAULT_FALLBACK_TIMEOUT_MS = 120_000
 
 /**
- * Retrieve a CID's full DAG over the bitswap-enabled verified-fetch and emit a
- * CAR stream rooted at that CID.
+ * Retrieve a CID's full DAG over the bitswap-enabled Helia node and emit a
+ * CAR stream rooted at that CID, in canonical trustless-gateway framing
+ * (`car-export.ts`: DFS, dups=n, CARv1).
  *
  * Returns a `ReadableStream<Uint8Array>` so the caller can pipe it through the
- * same piece-commitment hasher used for gateway responses. `dag-scope=all` is
- * implied — verified-fetch exports the full reachable DAG from the root.
+ * same piece-commitment hasher used for gateway responses. The full reachable
+ * DAG from the root is exported (`dag-scope=all` equivalent).
+ *
+ * Blocks are fetched through a blockstore session scoped to the root, so the
+ * walk only talks to peers that answered for the root, with up to
+ * `DEFAULT_LOOKAHEAD` block requests in flight ahead of the serializer.
  */
 export async function fetchCarViaHelia(
   cid: string,
   opts: { timeoutMs?: number; gateways?: string[] } = {}
 ): Promise<{ body: ReadableStream<Uint8Array>; source: 'helia' }> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_FALLBACK_TIMEOUT_MS
-  const fetch = await fallbackFetch(opts.gateways ?? DEFAULT_GATEWAYS)
-  const res = await fetch(`ipfs://${cid}`, {
-    headers: { accept: CAR_ACCEPT_FRAMED },
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-  if (!res.ok) {
-    throw new Error(`ipfs fallback could not assemble a CAR for ${cid}: HTTP ${res.status}`)
-  }
-  if (res.body == null) {
-    throw new Error(`ipfs fallback returned an empty body for ${cid}`)
-  }
-  return { body: res.body, source: 'helia' }
+  const root = CID.parse(cid)
+  const helia = await fallbackHelia(opts.gateways ?? DEFAULT_GATEWAYS)
+  const signal = AbortSignal.timeout(timeoutMs)
+  const session = helia.blockstore.createSession(root, { signal })
+  const body = exportCanonicalCarStream(session, helia.getCodec, root, { signal })
+  return { body, source: 'helia' }
 }
 
 /**
