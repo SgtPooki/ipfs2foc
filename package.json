@@ -74,6 +74,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.11",
     "@types/node": "^25.9.1",
+    "fr32-sha2-256-trunc254-padded-binary-tree-multihash": "^3.3.0",
     "ipfs2foc-core": "workspace:*",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
