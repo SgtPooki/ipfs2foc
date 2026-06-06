@@ -287,45 +287,78 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
     await persist()
   }
 
+  const isTerminalRejection = (err: unknown): boolean =>
+    err instanceof Error &&
+    (err.name === 'WaitForAddPiecesRejectedError' || err.name === 'WaitForCreateDataSetRejectedError')
+
+  // The upstream status waits poll for five minutes and give up — observed
+  // live with a provider whose create-and-add confirmed slowly. The status
+  // endpoints are idempotent GETs, so patience is re-running the wait; only
+  // an on-chain REJECTION is terminal.
+  const waitPatiently = async <T>(fn: () => Promise<T>): Promise<T> => {
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await fn()
+      } catch (err) {
+        if (isTerminalRejection(err)) throw err
+        lastErr = err
+      }
+    }
+    throw lastErr
+  }
+
   const confirmCommit = async (c: SubmitContextStatus, ctx: Ctx | undefined) => {
     if (c.phase === 'done') return
     if (c.txHash == null) {
       if (ctx == null) throw new Error('storage context unavailable')
       c.phase = 'committing'
       emit()
-      const result = await ctx.commit({
-        pieces: commitPieces,
-        extraData: c.extraData,
-        onSubmitted: (txHash) => {
-          // The provider accepted the submission — record the hash NOW so a
-          // reload polls its status instead of ever re-posting commit.
-          c.txHash = txHash
-          c.phase = 'confirming'
-          void persist()
-        },
-      })
-      c.dataSetId = result.dataSetId.toString()
-      c.pieceIds = result.pieceIds.map((id) => id.toString())
-    } else if (c.signedDataSetId == null) {
-      // Resume a create-and-add commit. Status URL shape verified against
-      // @filoz/synapse-core src/sp/create-dataset-add-pieces.ts; the helper
-      // chains the data set leg into the AddPieces leg itself.
-      c.phase = 'confirming'
-      emit()
-      const confirmation = await sp.waitForCreateDataSetAddPieces({
-        statusUrl: new URL(`/pdp/data-sets/created/${c.txHash}`, c.serviceURL).toString(),
-      })
+      try {
+        const result = await ctx.commit({
+          pieces: commitPieces,
+          extraData: c.extraData,
+          onSubmitted: (txHash) => {
+            // The provider accepted the submission — record the hash NOW so a
+            // reload polls its status instead of ever re-posting commit.
+            c.txHash = txHash
+            c.phase = 'confirming'
+            void persist()
+          },
+        })
+        c.dataSetId = result.dataSetId.toString()
+        c.pieceIds = result.pieceIds.map((id) => id.toString())
+        c.phase = 'done'
+        await persist()
+        return
+      } catch (err) {
+        // No hash recorded means the submission itself failed — surface it.
+        // With a hash, the transaction is the provider's to land; fall
+        // through to the same status waits a resumed run uses.
+        if (c.txHash == null) throw err
+      }
+    }
+    c.phase = 'confirming'
+    emit()
+    if (c.signedDataSetId == null) {
+      // Create-and-add status URL shape verified against @filoz/synapse-core
+      // src/sp/create-dataset-add-pieces.ts; the helper chains the data set
+      // leg into the AddPieces leg itself.
+      const confirmation = await waitPatiently(() =>
+        sp.waitForCreateDataSetAddPieces({
+          statusUrl: new URL(`/pdp/data-sets/created/${c.txHash}`, c.serviceURL).toString(),
+        })
+      )
       c.dataSetId = confirmation.dataSetId.toString()
       c.pieceIds = confirmation.piecesIds.map((id) => id.toString())
     } else {
-      // Resume an AddPieces commit. Status URL shape verified against
-      // @filoz/synapse-core src/sp/add-pieces.ts addPiecesApiRequest (the
-      // Location header it returns).
-      c.phase = 'confirming'
-      emit()
-      const confirmation = await sp.waitForAddPieces({
-        statusUrl: new URL(`/pdp/data-sets/${c.signedDataSetId}/pieces/added/${c.txHash}`, c.serviceURL).toString(),
-      })
+      // AddPieces status URL shape verified against @filoz/synapse-core
+      // src/sp/add-pieces.ts addPiecesApiRequest (the Location header).
+      const confirmation = await waitPatiently(() =>
+        sp.waitForAddPieces({
+          statusUrl: new URL(`/pdp/data-sets/${c.signedDataSetId}/pieces/added/${c.txHash}`, c.serviceURL).toString(),
+        })
+      )
       c.dataSetId = c.signedDataSetId
       c.pieceIds = confirmation.confirmedPieceIds.map((id) => id.toString())
     }
