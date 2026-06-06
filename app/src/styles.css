@@ -233,6 +233,32 @@ body {
   font-size: 13px;
   color: var(--warn);
 }
+.pay-status {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 4px 18px;
+  align-items: center;
+}
+.pay-status .pay-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ink-dim);
+}
+.pay-status .pay-value {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.pay-setup {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  color: var(--warn);
+  max-width: 60ch;
+}
+.pay-setup a {
+  color: inherit;
+}
 
 .cid-input {
   width: 100%;

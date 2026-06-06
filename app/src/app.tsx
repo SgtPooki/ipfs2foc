@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { computePiece, type PieceResult } from './commp.ts'
 import { HASH_POOL_SIZE } from './hash-pool.ts'
 import { buildManifest, downloadManifest } from './manifest.ts'
+import { fmtToken, type PaymentsStatus, readPaymentsStatus, readyToSign } from './payments.ts'
 import { clearRun, loadRun, saveRun } from './run-store.ts'
 import { connectWallet, NETWORKS, networkOf, refreshWallet, switchToCalibration, type WalletState } from './wallet.ts'
 
@@ -51,6 +52,9 @@ function Led({ on, color }: { on: boolean; color: string }) {
 export default function App() {
   const [wallet, setWallet] = useState<WalletState | null>(null)
   const [walletError, setWalletError] = useState<string | null>(null)
+  const [payments, setPayments] = useState<PaymentsStatus | null>(null)
+  const [paymentsError, setPaymentsError] = useState<string | null>(null)
+  const [paymentsLoading, setPaymentsLoading] = useState(false)
   const [cidsText, setCidsText] = useState('')
   const [relayBase, setRelayBase] = useState(DEFAULT_RELAY)
   const [gateway, setGateway] = useState(DEFAULT_GATEWAY)
@@ -134,6 +138,33 @@ export default function App() {
   const errors = rows.filter((r) => r.state.phase === 'error').length
   const walletNetwork = wallet == null ? null : networkOf(wallet.chainId)
   const onCalibration = walletNetwork === TARGET_NETWORK
+
+  // Payment-readiness reads (#23 signing prerequisites). Public-RPC reads on
+  // the connected address — nothing is signed; re-read whenever the wallet or
+  // its network changes.
+  useEffect(() => {
+    setPayments(null)
+    setPaymentsError(null)
+    setPaymentsLoading(false)
+    if (wallet == null) return
+    const network = networkOf(wallet.chainId)
+    if (network == null) return
+    let stale = false
+    setPaymentsLoading(true)
+    readPaymentsStatus(wallet.address, network)
+      .then((s) => {
+        if (!stale) setPayments(s)
+      })
+      .catch((err) => {
+        if (!stale) setPaymentsError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (!stale) setPaymentsLoading(false)
+      })
+    return () => {
+      stale = true
+    }
+  }, [wallet])
 
   const connect = useCallback(async () => {
     setWalletError(null)
@@ -280,6 +311,48 @@ export default function App() {
           )}
           {walletError && <span className="err-text">{walletError}</span>}
         </div>
+        {wallet != null && walletNetwork != null && (
+          <div className="pay-status">
+            {paymentsLoading ? (
+              <span className="dim">reading payment status…</span>
+            ) : paymentsError != null ? (
+              <span className="err-text" title={paymentsError}>
+                payment status unavailable: {short(paymentsError, 48, 0)}
+              </span>
+            ) : payments != null ? (
+              <>
+                <span className="pay-label">wallet</span>
+                <span className="pay-value">
+                  {fmtToken(payments.fil, walletNetwork === 'calibration' ? 'tFIL' : 'FIL')} ·{' '}
+                  {fmtToken(payments.walletUsdfc, 'USDFC')}
+                </span>
+                <span className="pay-label">deposited</span>
+                <span className="pay-value">
+                  {fmtToken(payments.depositedUsdfc, 'USDFC')} ({fmtToken(payments.availableUsdfc, 'USDFC')}{' '}
+                  available)
+                </span>
+                <span className="pay-label">storage operator</span>
+                <span className="pay-value">
+                  <Led color={payments.operatorApproved ? 'var(--ok)' : 'var(--warn)'} on />{' '}
+                  {payments.operatorApproved ? 'approved' : 'not approved'}
+                </span>
+                {!readyToSign(payments) && (
+                  <span className="pay-setup">
+                    signing needs a one-time payment setup: deposit USDFC into Filecoin Pay and approve the storage
+                    service as a payments operator —{' '}
+                    <a
+                      href="https://github.com/SgtPooki/ipfs2foc#network-gas-and-payments"
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      setup guide
+                    </a>
+                  </span>
+                )}
+              </>
+            ) : null}
+          </div>
+        )}
       </section>
 
       <section className="panel">
