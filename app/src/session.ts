@@ -20,10 +20,13 @@
 //   hours): no new presign batch should be issued within
 //   PRESIGN_SAFETY_MARGIN_SECONDS of expiry. Extend-in-place re-logins the
 //   SAME session address, so stored material never changes.
+import type { SynapseFromClientOptions } from '@filoz/synapse-sdk'
 import type { Hex } from 'viem'
-import type { NetworkKey } from './wallet.ts'
-import type { WalletState } from './wallet.ts'
 import { loadSessionKey, saveSessionKey, updateSessionExpiry, wipeSessionKey } from './session-store.ts'
+import type { NetworkKey, WalletState } from './wallet.ts'
+
+/** The session-key-backed viem client Synapse signs FWSS typed-data with. */
+export type SessionClient = NonNullable<SynapseFromClientOptions['sessionClient']>
 
 /** Selectable grant durations. Longer windows get blunter risk copy in the UI. */
 export const SESSION_DURATIONS = [
@@ -47,7 +50,7 @@ export interface SessionState {
   /** Unix seconds — the smaller of the two permission expiries, read on chain. */
   expiresAt: bigint
   /** Signs FWSS typed-data in place of the wallet. Pass as Synapse sessionClient. */
-  sessionClient: unknown
+  sessionClient: SessionClient
 }
 
 const nowSeconds = (): bigint => BigInt(Math.floor(Date.now() / 1000))
@@ -77,7 +80,7 @@ async function sessionPermissions() {
   return [CreateDataSetPermission, AddPiecesPermission]
 }
 
-function walletChainClient(
+export function walletChainClient(
   wallet: WalletState,
   network: NetworkKey,
   viem: Awaited<ReturnType<typeof deps>>['viem'],
