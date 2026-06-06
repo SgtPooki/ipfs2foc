@@ -62,9 +62,7 @@ function messagesOf(err: unknown): string[] {
  * an abort — is terminal and must stay loud.
  */
 function isTransientBlockError(err: unknown): boolean {
-  return messagesOf(err).some((m) =>
-    /received (429|5\d\d) |Failed to fetch|in session after evictions/i.test(m)
-  )
+  return messagesOf(err).some((m) => /received (429|5\d\d) |Failed to fetch|in session after evictions/i.test(m))
 }
 
 export interface PrepareFailure {
