@@ -28,9 +28,12 @@ import type { NetworkKey, WalletState } from './wallet.ts'
 /** The session-key-backed viem client Synapse signs FWSS typed-data with. */
 export type SessionClient = NonNullable<SynapseFromClientOptions['sessionClient']>
 
-/** Selectable grant durations. Longer windows get blunter risk copy in the UI. */
+/**
+ * Selectable grant durations. Longer windows get blunter risk copy in the UI.
+ * Every option must exceed PRESIGN_SAFETY_MARGIN_SECONDS by a working margin —
+ * a grant at or under it could never issue a presign.
+ */
 export const SESSION_DURATIONS = [
-  { label: '1 hour', seconds: 3_600n },
   { label: '24 hours', seconds: 86_400n },
   { label: '3 days', seconds: 259_200n },
   { label: '7 days', seconds: 604_800n },
