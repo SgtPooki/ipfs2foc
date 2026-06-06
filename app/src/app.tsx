@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { computePiece, type PieceResult } from './commp.ts'
+import { computePiece, describePrepareFailure, type PieceResult } from './commp.ts'
 import { HASH_POOL_SIZE } from './hash-pool.ts'
 import { buildManifest, downloadManifest } from './manifest.ts'
 import { fmtToken, type PaymentsStatus, readPaymentsStatus, readyToSign } from './payments.ts'
@@ -32,7 +32,7 @@ type RowState =
   | { phase: 'queued' }
   | { phase: 'working'; bytes: number; rate: number }
   | { phase: 'done'; result: PieceResult }
-  | { phase: 'error'; message: string }
+  | { phase: 'error'; message: string; detail: string }
 
 // Process several CIDs at once. Retrieval and CAR assembly share one helia
 // node on this thread; the CPU-bound hashing runs in pooled workers, one core
@@ -366,6 +366,33 @@ export default function App() {
     }
   }, [])
 
+  // Compute one CID's piece and patch its row through the phases. Shared by
+  // the Prepare worker pool and the per-row Retry action (#34).
+  const prepareOne = useCallback(
+    async (cid: string) => {
+      const startedAt = performance.now()
+      let lastEmit = 0
+      const patch = (state: RowState) => setRows((prev) => prev.map((r) => (r.cid === cid ? { ...r, state } : r)))
+      patch({ phase: 'working', bytes: 0, rate: 0 })
+      try {
+        const result = await computePiece(gateway, cid, relayBase, (bytes) => {
+          const now = performance.now()
+          if (now - lastEmit < PROGRESS_THROTTLE_MS) return
+          lastEmit = now
+          const secs = (now - startedAt) / 1000
+          patch({ phase: 'working', bytes, rate: secs > 0 ? bytes / 1048576 / secs : 0 })
+        })
+        patch({ phase: 'done', result })
+        savedResults.current[cid] = result
+        persist(cidsText)
+      } catch (err) {
+        const failure = describePrepareFailure(err)
+        patch({ phase: 'error', message: failure.headline, detail: failure.detail })
+      }
+    },
+    [cidsText, gateway, relayBase, persist]
+  )
+
   const run = useCallback(async () => {
     setRunning(true)
     // Prune saved results for CIDs no longer in the input, then seed done rows
@@ -381,40 +408,18 @@ export default function App() {
       })
     )
     persist(cidsText)
-    const patch = (i: number, state: RowState) =>
-      setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, state } : r)))
 
-    const processOne = async (i: number) => {
-      const startedAt = performance.now()
-      let lastEmit = 0
-      patch(i, { phase: 'working', bytes: 0, rate: 0 })
-      try {
-        const result = await computePiece(gateway, cids[i], relayBase, (bytes) => {
-          const now = performance.now()
-          if (now - lastEmit < PROGRESS_THROTTLE_MS) return
-          lastEmit = now
-          const secs = (now - startedAt) / 1000
-          patch(i, { phase: 'working', bytes, rate: secs > 0 ? bytes / 1048576 / secs : 0 })
-        })
-        patch(i, { phase: 'done', result })
-        savedResults.current[cids[i]] = result
-        persist(cidsText)
-      } catch (err) {
-        patch(i, { phase: 'error', message: err instanceof Error ? err.message : String(err) })
-      }
-    }
-
-    // Worker pool over the CID indices that still need computing.
-    const pendingIdx = cids.flatMap((cid, i) => (savedResults.current[cid] ? [] : [i]))
+    // Worker pool over the CIDs that still need computing.
+    const pending = cids.filter((cid) => savedResults.current[cid] == null)
     let next = 0
     const worker = async () => {
-      while (next < pendingIdx.length) {
-        await processOne(pendingIdx[next++])
+      while (next < pending.length) {
+        await prepareOne(pending[next++])
       }
     }
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pendingIdx.length) }, worker))
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, worker))
     setRunning(false)
-  }, [cids, cidsText, gateway, relayBase, persist])
+  }, [cids, cidsText, persist, prepareOne])
 
   const reset = useCallback(() => {
     savedResults.current = {}
@@ -667,8 +672,8 @@ export default function App() {
                       {short(r.state.result.pieceCid)}
                     </code>
                   ) : r.state.phase === 'error' ? (
-                    <span className="err-text" title={r.state.message}>
-                      {short(r.state.message, 28, 0)}
+                    <span className="err-text" title={r.state.detail}>
+                      {short(r.state.message, 44, 0)}
                     </span>
                   ) : r.state.phase === 'working' ? (
                     <span className="working">
@@ -689,6 +694,10 @@ export default function App() {
                     >
                       {copied === r.cid ? 'copied ✓' : 'copy'}
                     </button>
+                  ) : r.state.phase === 'error' ? (
+                    <button className="copy" disabled={running} onClick={() => void prepareOne(r.cid)} type="button">
+                      retry
+                    </button>
                   ) : (
                     <span className="dim">—</span>
                   )}
@@ -696,6 +705,12 @@ export default function App() {
               )
             })}
           </div>
+          {errors > 0 && (
+            <p className="gate-note">
+              finished rows are kept — Prepare and per-row retry recompute only what failed. hover a failure for the
+              full error.
+            </p>
+          )}
           {results.length > 0 && (
             <div className="actions">
               <button className="btn" onClick={saveManifest} type="button">
