@@ -54,6 +54,11 @@ transactions are saved as they happen, so pressing Submit after a reload
 continues where the run stopped — it never signs or submits the same thing
 twice. Clear starts over.
 
+While a run is active the console holds a screen wake lock so the machine
+does not sleep mid-run, and closing the tab asks for confirmation first.
+Closing is still safe: providers finish in-flight pulls and submitted
+commits on their own, and only new submissions wait for the tab to return.
+
 ## When to use the CLI instead
 
 Bulk runs, assembled (multi-asset) pieces, and submission with a headless key

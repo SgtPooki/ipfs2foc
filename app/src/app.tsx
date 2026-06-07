@@ -22,6 +22,7 @@ import {
   type SubmitState,
   submitStateFromSaved,
 } from './submit.ts'
+import { useTabLifetime } from './tab-guard.ts'
 import { connectWallet, NETWORKS, networkOf, refreshWallet, switchToCalibration, type WalletState } from './wallet.ts'
 
 const DEFAULT_RELAY = 'https://ipfs2foc-relay.russell-3c4.workers.dev'
@@ -199,6 +200,10 @@ export default function App() {
   const onCalibration = walletNetwork === TARGET_NETWORK
   const allCommitted =
     submitState != null && submitState.contexts.length > 0 && submitState.contexts.every((c) => c.phase === 'done')
+
+  // Long runs: keep the screen awake and confirm accidental closes while
+  // prepare or submit is in flight. Closing stays safe — both resume.
+  useTabLifetime(running || submitting)
 
   // Payment-readiness reads (#23 signing prerequisites). Public-RPC reads on
   // the connected address — nothing is signed; re-read whenever the wallet or
@@ -814,6 +819,12 @@ export default function App() {
                 <p className="pay-setup">
                   this browser is blocking storage — progress cannot survive a reload. keep this tab open until every
                   copy reads committed.
+                </p>
+              )}
+              {submitting && submitState?.persisted !== false && (
+                <p className="gate-note">
+                  providers pull and confirm on their own. closing this tab only pauses new submissions — progress is
+                  saved, and Resume continues exactly where it stopped.
                 </p>
               )}
               {submitError != null && (
