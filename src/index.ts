@@ -6,6 +6,7 @@
  *   probe   <cid> [--gateway URL]...        Verify a gateway serves deterministic trustless CARs.
  *   commp   <cid> [--gateway URL]...        Fetch a CID as a CAR and print its PieceCID v2 + size.
  *   plan    --cids FILE [--db FILE] [opts]  Compute commitments + pack aggregates into the DB (resumable).
+ *   import-manifest FILE [--db FILE] [opts] Load a browser-console run manifest as done pieces (recomputes nothing).
  *   status  [--db FILE]                     Report progress and the aggregate plan.
  *   serve   [--db FILE] [opts]              Background commP runner + dashboard.
  *   gas     [--network N] [opts]            Current network base fee and whether to pause.
@@ -31,6 +32,7 @@ import { classifyBaseFee, DEFAULT_MAX_BASE_FEE, getBaseFee, resolveRpcUrl } from
 import { DEFAULT_GATEWAYS, probeGateway } from './gateway.ts'
 import { stopGatewayBlocks } from './gateway-blocks.ts'
 import { stopHeliaFallback } from './helia-fallback.ts'
+import { parseRunManifest, runImportManifest } from './import-manifest.ts'
 import { runPlan } from './migrate.ts'
 import { runPackCars } from './pack-cars.ts'
 import { explorerBase } from './pdp-verifier.ts'
@@ -52,6 +54,8 @@ Usage:
   ipfs2foc commp  <cid> [--gateway URL]...
   ipfs2foc plan   --cids <file> [--db <file>] [--gateway URL]... [--piece-size 32GiB]
                      [--concurrency 8]
+  ipfs2foc import-manifest <manifest.json> [--db <file>] [--network mainnet|calibration]
+                     [--piece-size 32GiB] [--no-auto-pack]
   ipfs2foc status [--db <file>] [--json]
   ipfs2foc serve  [--db <file>] [--cids <file>] [--gateway URL]... [--piece-size 32GiB]
                      [--concurrency 8] [--port 4321] [--network mainnet|calibration] [--max-base-fee N]
@@ -108,6 +112,7 @@ const KNOWN_COMMANDS = [
   'probe',
   'commp',
   'plan',
+  'import-manifest',
   'status',
   'serve',
   'gas',
@@ -289,6 +294,57 @@ async function cmdPlan(argv: string[]): Promise<void> {
     db.close()
     await stopHeliaFallback()
     await stopGatewayBlocks()
+  }
+}
+
+async function cmdImportManifest(argv: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      db: { type: 'string', default: DEFAULT_DB },
+      network: { type: 'string', default: 'mainnet' },
+      'piece-size': { type: 'string', default: '32GiB' },
+      'no-auto-pack': { type: 'boolean', default: false },
+    },
+  })
+  const file = positionals[0]
+  if (file == null) {
+    throw new Error(
+      'import-manifest requires a <manifest.json> (saved by the browser console via "Download run manifest")'
+    )
+  }
+  const network = values.network as string
+  if (network !== 'mainnet' && network !== 'calibration') {
+    throw new Error(`unknown --network ${network} (expected mainnet|calibration)`)
+  }
+  const manifest = parseRunManifest(await readFile(file, 'utf8'))
+  log(`network: ${network}; manifest network: ${manifest.network}, gateway: ${manifest.gateway}`)
+
+  const db = new MigrationDB(values.db as string)
+  try {
+    const summary = runImportManifest(db, manifest, {
+      network,
+      aggregateSizeBytes: parseSize(values['piece-size'] as string),
+      autoPack: values['no-auto-pack'] !== true,
+    })
+    log(
+      `Imported ${summary.imported} piece(s) (${summary.alreadyRecorded} already recorded), ` +
+        `${summary.aggregateCount} aggregate(s) -> ${values.db}`
+    )
+    if (summary.imported > 0 || summary.alreadyRecorded > 0) {
+      const relay = manifest.relayBase ?? '<relay-base-url>'
+      log(
+        `Next: 'ipfs2foc pdp-submit --data-set-id <id> --source-relay ${relay} --network ${network}' ` +
+          `(PRIVATE_KEY env; create-data-set first if you have no data set)`
+      )
+    }
+    if (summary.oversized.length > 0) {
+      log(`Oversized: ${summary.oversized.join(', ')} (piece padded size exceeds --piece-size aggregate budget)`)
+    }
+    console.log(JSON.stringify(summary, null, 2))
+  } finally {
+    db.close()
   }
 }
 
@@ -728,6 +784,9 @@ async function main(): Promise<void> {
       break
     case 'plan':
       await cmdPlan(rest)
+      break
+    case 'import-manifest':
+      await cmdImportManifest(rest)
       break
     case 'status':
       await cmdStatus(rest)

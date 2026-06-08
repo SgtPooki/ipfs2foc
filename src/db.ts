@@ -422,6 +422,14 @@ export class MigrationDB {
     })
   }
 
+  /** One piece row by source CID, any status. Null when the CID was never registered. */
+  pieceByCid(cid: string): PieceRow | null {
+    const row = this.#db
+      .prepare(`SELECT cid, piece_cid, raw_size, gateway, url, status, error FROM pieces WHERE cid = ? LIMIT 1`)
+      .get(cid)
+    return row == null ? null : toPieceRow(row)
+  }
+
   /**
    * The gateway CAR URL for a piece, by its PieceCID v2. Used by the redirect
    * server to answer `GET /piece/{pcidv2}` with a 302 to the original gateway.
