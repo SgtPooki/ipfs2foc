@@ -6,6 +6,7 @@
   "description": "Shared canonical CAR helpers for ipfs2foc — the single source of truth for the gateway CAR URL the CLI commits over and the relay/app redirect to, and for the canonical CAR export those commitments are computed from. Consumed (bundled) by the CLI, relay, and browser app.",
   "exports": {
     ".": "./src/car-url.ts",
+    "./block-source": "./src/block-source.ts",
     "./car-export": "./src/car-export.ts",
     "./min-piece-guard": "./src/min-piece-guard.ts",
     "./piece-aggregate": "./src/piece-aggregate.ts"
