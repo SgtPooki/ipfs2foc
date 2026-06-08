@@ -66,8 +66,11 @@ test('WASM hasher is chunk-size independent', () => {
 
 // Live, like commp-piece-cid-regression.test.ts: the pinned PieceCIDs there are
 // what the CLI computes and the provider verifies. The WASM hasher must land on
-// the same values over the same gateway CARs. If the gateway is unreachable the
-// assertions fail loudly rather than silently passing.
+// the same values over the same gateway CARs. Opt in with LIVE_TESTS=1 (CI sets
+// it); when the canary runs and the gateway is unreachable, the assertions fail
+// loudly rather than silently passing.
+const liveSkip = process.env.LIVE_TESTS == null ? 'live gateway canary; set LIVE_TESTS=1 to run' : false
+
 const GATEWAY = 'https://trustless-gateway.link'
 
 const KNOWN = [
@@ -81,7 +84,7 @@ const KNOWN = [
   },
 ]
 
-test('WASM hasher reproduces the pinned PieceCIDs over the gateway CARs', async () => {
+test('WASM hasher reproduces the pinned PieceCIDs over the gateway CARs', { skip: liveSkip }, async () => {
   for (const known of KNOWN) {
     const res = await fetch(buildCarUrl(GATEWAY, known.cid), { headers: { accept: CAR_ACCEPT } })
     assert.equal(res.ok, true, `gateway fetch failed for ${known.cid}: HTTP ${res.status}`)

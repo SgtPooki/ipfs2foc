@@ -22,4 +22,8 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run typecheck
       - run: pnpm test
+        env:
+          # Live-gateway canaries (trustless CAR determinism pins) run here,
+          # where DNS is unfiltered; the default local suite stays hermetic.
+          LIVE_TESTS: '1'
       - run: pnpm run build

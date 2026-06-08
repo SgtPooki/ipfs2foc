@@ -20,9 +20,13 @@ after(async () => {
 // resulting PieceCID for two real CIDs so a gateway framing change or a
 // piece-hasher regression is caught.
 //
-// Live: it fetches real CARs from a public trustless gateway, the same way
-// `helia-config.test.ts` stands up a real node. If the gateway is unreachable
-// the assertions fail loudly rather than silently passing.
+// Live: it fetches real CARs from a public trustless gateway. Opt in with
+// LIVE_TESTS=1 (CI sets it on every push) so the default suite stays hermetic —
+// an offline machine or filtered DNS must not fail it. When the canary does
+// run and the gateway is unreachable, the assertions fail loudly rather than
+// silently passing.
+
+const liveSkip = process.env.LIVE_TESTS == null ? 'live gateway canary; set LIVE_TESTS=1 to run' : false
 
 const GATEWAY = 'https://trustless-gateway.link'
 
@@ -60,7 +64,7 @@ async function hashStream(body: ReadableStream<Uint8Array>): Promise<{ sha256: s
   return { sha256: hash.digest('hex'), bytes }
 }
 
-test('direct gateway CAR has the pinned size/sha256 and PieceCID', async () => {
+test('direct gateway CAR has the pinned size/sha256 and PieceCID', { skip: liveSkip }, async () => {
   for (const known of KNOWN) {
     // 1. The pinned gateway URL the provider is 302'd to streams the known CAR.
     const direct = await fetch(buildCarUrl(GATEWAY, known.cid), { headers: { accept: CAR_ACCEPT } })
