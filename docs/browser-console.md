@@ -12,9 +12,23 @@ page.
 For each CID, the console computes the piece commitment and builds the pull
 URL through the stateless redirect relay. The "Download run manifest" button
 saves the whole run as JSON — the per-piece commitments and pull URLs, plus
-the gateway and relay they were computed against. Importing a manifest into
-the CLI for submission is
-[#35](https://github.com/SgtPooki/ipfs2foc/issues/35).
+the gateway and relay they were computed against.
+
+A saved manifest is also the hand-off to the CLI:
+
+```bash
+ipfs2foc import-manifest manifest.json --db migrate.db --network calibration
+ipfs2foc pdp-submit --db migrate.db --data-set-id <id> \
+  --source-relay <relay-base-url> --network calibration
+```
+
+`import-manifest` records the manifest's commitments as done pieces and packs
+them into aggregates — recomputing nothing, since the console's hasher and the
+CLI's are pinned byte-identical — leaving the DB exactly as if `plan` had
+produced it. The manifest's network must match `--network`, a piece already
+recorded with a different commitment refuses the whole import, and re-importing
+the same file changes nothing. Prepare in the console, submit with a key that
+never enters a browser.
 
 ## Submitting from the browser
 
@@ -63,4 +77,5 @@ commits on their own, and only new submissions wait for the tab to return.
 
 Bulk runs, assembled (multi-asset) pieces, and submission with a headless key
 stay with the [CLI](../README.md). The browser console covers the
-one-CID-one-piece passthrough case.
+one-CID-one-piece passthrough case. The two compose: prepare in the console,
+then `import-manifest` the saved run and submit from the CLI.

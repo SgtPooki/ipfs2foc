@@ -175,6 +175,13 @@ ipfs2foc commp <cid> [--gateway URL]...
 ipfs2foc plan --cids cids.txt [--db migrate.db] [--gateway URL]... \
   [--piece-size 32GiB] [--concurrency 8] [--no-auto-pack]
 
+# Load a run manifest saved by the browser console: records its piece
+# commitments as done pieces (recomputing nothing) and packs aggregates,
+# leaving the DB as if `plan` had produced it. Refuses on network mismatch
+# or a conflicting prior commitment; re-import is a no-op.
+ipfs2foc import-manifest <manifest.json> [--db migrate.db] \
+  [--network mainnet|calibration] [--piece-size 32GiB] [--no-auto-pack]
+
 # Multi-asset packer: assemble many source CIDs into one multi-root CAR per
 # sub-piece, append aggregates over the new sub-pieces.
 ipfs2foc pack-cars --db migrate.db --car-store <dir> [--gateway URL]... \
@@ -204,9 +211,12 @@ ipfs2foc redirect-serve [--db migrate.db] [--port 4322] [--ingress funnel|cloudf
 ipfs2foc create-data-set --provider-id <id> \
   [--network mainnet|calibration] [--rpc-url URL] [--cdn] [--timeout-seconds 600]
 
-# Migrate via the PDP pull path (PRIVATE_KEY env)
+# Migrate via the PDP pull path (PRIVATE_KEY env). The pull source is either
+# your own redirect-serve origin (--source-base) or a shared stateless relay
+# (--source-relay, passthrough sub-pieces only — no server of your own needed).
 ipfs2foc pdp-submit --db migrate.db --data-set-id <id> \
-  --source-base https://<public-host> [--network mainnet|calibration] [--rpc-url URL] \
+  (--source-base https://<public-host> | --source-relay https://<relay-base>) \
+  [--network mainnet|calibration] [--rpc-url URL] \
   [--max-in-flight 4] [--max-base-fee 1000000] [--pull-batch 32] [--poll-seconds 15]
 
 # Verification report: reconcile a run against the data set's on-chain pieces
@@ -226,6 +236,11 @@ from source-gateway 5xx/429 through an embedded node:
 backpressure (HTTP 429 + `Retry-After`). If the provider's add errors after the
 on-chain AddPieces already landed, `pdp-submit` confirms the aggregate against the
 data set's active pieces and marks it committed instead of adding it again.
+
+A run prepared in the [browser console](docs/browser-console.md) submits the
+same way: `import-manifest` the saved manifest, then `pdp-submit
+--source-relay` — the provider pulls each piece through the relay, so no
+redirect server of your own is needed.
 
 ### Dashboard
 
