@@ -29,6 +29,7 @@ import { runCreateDataSet } from './create-data-set.ts'
 import { MigrationDB } from './db.ts'
 import { classifyBaseFee, DEFAULT_MAX_BASE_FEE, getBaseFee, resolveRpcUrl } from './gas.ts'
 import { DEFAULT_GATEWAYS, probeGateway } from './gateway.ts'
+import { stopGatewayBlocks } from './gateway-blocks.ts'
 import { stopHeliaFallback } from './helia-fallback.ts'
 import { runPlan } from './migrate.ts'
 import { runPackCars } from './pack-cars.ts'
@@ -226,6 +227,7 @@ async function cmdCommp(argv: string[]): Promise<void> {
     console.log(JSON.stringify(piece, null, 2))
   } finally {
     await stopHeliaFallback()
+    await stopGatewayBlocks()
   }
 }
 
@@ -286,6 +288,7 @@ async function cmdPlan(argv: string[]): Promise<void> {
   } finally {
     db.close()
     await stopHeliaFallback()
+    await stopGatewayBlocks()
   }
 }
 

@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import { buildCarUrl, CAR_ACCEPT, fetchCar } from '../src/gateway.ts'
+import { stopGatewayBlocks } from '../src/gateway-blocks.ts'
 import { fetchAndComputePiece } from '../src/piece.ts'
+
+// fetchAndComputePiece builds a per-gateway helia node whose sockets keep the
+// event loop alive; without this the file's process never exits.
+after(async () => {
+  await stopGatewayBlocks()
+})
 
 // HARD GUARDRAIL (#19): the migrator's PieceCID must equal what the storage
 // provider recomputes from the bytes it pulls. The provider is 302'd to the

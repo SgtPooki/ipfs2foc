@@ -2,6 +2,11 @@
  * Compute a Filecoin piece commitment (PieceCID v2, FRC-0069) over a CAR
  * stream, while verifying the CAR is rooted at the expected CID.
  *
+ * The CAR bytes come from the block-verified canonical path
+ * (`gateway-blocks.ts`): blocks retrieved individually from the configured
+ * gateway, hash-checked, and serialized locally — never a raw gateway
+ * response, which can end early at a block boundary and still parse cleanly.
+ *
  * The hash is computed in a single streaming pass — the CAR bytes are never
  * fully buffered — so this scales to large pieces with bounded memory. This is
  * the one unavoidable full read of each object's bytes; everything downstream
@@ -15,7 +20,8 @@ import { CID } from 'multiformats/cid'
 import * as Raw from 'multiformats/codecs/raw'
 import * as Link from 'multiformats/link'
 import type { FailureCategory, MigrationDB } from './db.ts'
-import { fetchCar, GatewayError } from './gateway.ts'
+import { GatewayError } from './gateway.ts'
+import { fetchCanonicalCar } from './gateway-blocks.ts'
 import { DEFAULT_FALLBACK_TIMEOUT_MS, fetchCarViaHelia } from './helia-fallback.ts'
 
 /**
@@ -122,10 +128,12 @@ export interface FetchAndComputeOptions {
 }
 
 /**
- * Fetch a CID as a CAR from the first working gateway, compute its PieceCID v2,
- * and verify the CAR root matches the requested CID (i.e. no re-chunking).
- * Tries gateways in order; the first that yields a valid, root-matching CAR
- * wins. The winning gateway's URL is what the SP will later pull from.
+ * Retrieve a CID's DAG block-by-block from the first working gateway (each
+ * block hash-verified), compute its PieceCID v2 over the locally serialized
+ * canonical CAR, and verify the root matches the requested CID. Tries
+ * gateways in order; the first whose walk completes wins. The winning
+ * gateway's CAR URL is what the SP will later pull from — byte-identical to
+ * the bytes hashed here.
  *
  * When `ipfsFallback` is enabled and every gateway fails with a retriable
  * category (5xx, 429, timeout, or CAR root mismatch), the function falls back
@@ -141,11 +149,11 @@ export interface FetchAndComputeOptions {
  * gateway + Helia fetchers.
  */
 export interface PieceFetchDeps {
-  fetchCar: typeof fetchCar
+  fetchCar: typeof fetchCanonicalCar
   fetchCarViaHelia: typeof fetchCarViaHelia
 }
 
-const defaultPieceFetchDeps: PieceFetchDeps = { fetchCar, fetchCarViaHelia }
+const defaultPieceFetchDeps: PieceFetchDeps = { fetchCar: fetchCanonicalCar, fetchCarViaHelia }
 
 export async function fetchAndComputePiece(
   cid: string,
