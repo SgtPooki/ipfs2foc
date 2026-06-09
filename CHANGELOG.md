@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.2.0](https://github.com/SgtPooki/ipfs2foc/compare/ipfs2foc-v0.1.0...ipfs2foc-v0.2.0) (2026-06-09)
+
+
+### Features
+
+* --source-relay to drive the shared relay ([ea3c850](https://github.com/SgtPooki/ipfs2foc/commit/ea3c85011b2db8460fc97e1a3001877a3b8dfee5))
+* app computes commP from verified blocks ([f1932d7](https://github.com/SgtPooki/ipfs2foc/commit/f1932d7a9ac1627e1a94d71be94edf1658ef501c))
+* **app:** stream one CAR per root in commP ([e14e8f8](https://github.com/SgtPooki/ipfs2foc/commit/e14e8f8dfea95329c83f457e1a76caf800ec3034))
+* auto-convert CIDv0 to CIDv1 in the app ([ad08ecb](https://github.com/SgtPooki/ipfs2foc/commit/ad08ecb1afb7fbe883d9c9638b2039f237c13fe2))
+* browser migration console + Pages CI ([d53d17a](https://github.com/SgtPooki/ipfs2foc/commit/d53d17a760ed025954598e8c6a1e67ccb1503509))
+* CAR-stream block source, one request per root ([a7f3799](https://github.com/SgtPooki/ipfs2foc/commit/a7f3799290fe7fa6fffe053ea58dd94aabd559a5))
+* confirm commit from chain when status lags ([78eea3c](https://github.com/SgtPooki/ipfs2foc/commit/78eea3c37c013d9497786cd53dcdc33c9e99a4c7))
+* CSP and self-hosted fonts for the app ([d376d1e](https://github.com/SgtPooki/ipfs2foc/commit/d376d1e8dab9156bc1abcf4eb370f98a399c64d4))
+* dashboard next-steps panel for on-chain commit ([55a40bb](https://github.com/SgtPooki/ipfs2foc/commit/55a40bb584288669e58e12c6be34a4c7885c12d2))
+* default to trustless-gateway.link only ([ea7cbc5](https://github.com/SgtPooki/ipfs2foc/commit/ea7cbc58382c39983e96d167ba590e28eade6477))
+* import browser run manifest into the DB ([12485be](https://github.com/SgtPooki/ipfs2foc/commit/12485be33659f6b82566f9e890bea85a18659bc9))
+* one-click switch/add Calibration network ([c6e0102](https://github.com/SgtPooki/ipfs2foc/commit/c6e01027c3c70a7846948b2975666639e3681bb4))
+* per-IP rate limit on relay pull path ([620f01c](https://github.com/SgtPooki/ipfs2foc/commit/620f01ccabfc964b4d938f5703212a6a7b505879))
+* per-row retry with classified errors ([59080da](https://github.com/SgtPooki/ipfs2foc/commit/59080da444a9b2b3da568768281ecaca1fe85874))
+* persist prepare run, resume on load ([5fb162b](https://github.com/SgtPooki/ipfs2foc/commit/5fb162b46c3c0a831e26505dfb108e92294e6619))
+* redesign serve dashboard as an instrument panel ([dba6bf1](https://github.com/SgtPooki/ipfs2foc/commit/dba6bf1b78b2dff52750d35897ac75fe743a8232))
+* retry cold gateway blocks in prepare ([31c8a93](https://github.com/SgtPooki/ipfs2foc/commit/31c8a936ae2abfbacfa208add2540f3255979d84))
+* session key grant, storage, lifecycle ([700f371](https://github.com/SgtPooki/ipfs2foc/commit/700f37104352b12b215b70b968a4afa9eba51ec5))
+* signing session panel with grant and revoke ([b51b7bb](https://github.com/SgtPooki/ipfs2foc/commit/b51b7bb60e994e7c2820571d1234af83bae88543))
+* state-aware dashboard controls and gas-off label ([6316faf](https://github.com/SgtPooki/ipfs2foc/commit/6316faf77c4dc776506a37edc054c0a19f1350e7))
+* stateless redirect relay for browser dApp ([40ef1c3](https://github.com/SgtPooki/ipfs2foc/commit/40ef1c363677e52a96133d023c3fc85eb3708cbc))
+* submit driver with reload-safe resume ([01d9713](https://github.com/SgtPooki/ipfs2foc/commit/01d97139b8c631d3474249f7749b1b8af60d3f8c))
+* submit panel with copies selector ([e3c2fa0](https://github.com/SgtPooki/ipfs2foc/commit/e3c2fa0c29a3f70077e5d8f8806ac040caf97e98))
+* verified-fetch on the IPFS fallback path ([a43b08f](https://github.com/SgtPooki/ipfs2foc/commit/a43b08f7787ed3b400803dbc465c6ba728a18c54))
+* wake lock and close guard during runs ([e76425f](https://github.com/SgtPooki/ipfs2foc/commit/e76425f325923519afcb8b0149ba7eb81b0f9171))
+* wallet panel reads payment readiness ([339d61d](https://github.com/SgtPooki/ipfs2foc/commit/339d61d25bf6b6ca5527e735971f4910c0728d27))
+
+
+### Bug Fixes
+
+* build app as pnpm workspace for Pages CI ([e781d00](https://github.com/SgtPooki/ipfs2foc/commit/e781d009bb63a8be37893af7b5683c0e46eec687))
+* don't drop worker request during WASM init ([9e9d3b1](https://github.com/SgtPooki/ipfs2foc/commit/9e9d3b1512b7e17286bdf76c4816d298d62bb67e))
+* drop session duration below presign margin ([19b908b](https://github.com/SgtPooki/ipfs2foc/commit/19b908b4eb99d6ca2585a3a4e850180daa5a61c5))
+* enable dashboard Start only when work is pending ([563a1ad](https://github.com/SgtPooki/ipfs2foc/commit/563a1ad0b6758b88680d1d916a6631acb8cd4a99))
+* outlast slow commit confirmation ([4d58762](https://github.com/SgtPooki/ipfs2foc/commit/4d58762f590f90af098a6d501cb653d117c399d5))
+
+
+### Performance Improvements
+
+* hash commP in WASM workers off main thread ([e28d32b](https://github.com/SgtPooki/ipfs2foc/commit/e28d32ba1a88f0d1e00674917b82c9e2fa9fba34))
+* lookahead CAR export for ipfs fallback ([2fc9146](https://github.com/SgtPooki/ipfs2foc/commit/2fc9146c457b462d7b50977d56818d9a6d14ef30))
+* parallelize CID prep + throttle progress ([c881392](https://github.com/SgtPooki/ipfs2foc/commit/c8813927ccbc15dcfb6e0166c48072da2af9ac31))
+
 ## [0.1.0](https://github.com/SgtPooki/ipfs2foc/compare/ipfs2foc-v0.0.1...ipfs2foc-v0.1.0) (2026-06-04)
 
 
