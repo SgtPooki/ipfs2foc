@@ -95,7 +95,7 @@ test('parseRunManifest refuses duplicate cids and shared PieceCIDs', () => {
 })
 
 test('version gate: newer versions and non-manifests are refused explicitly', () => {
-  assert.throws(() => parseRunManifest(manifestJson({ version: 2 })), /newer than this CLI understands/)
+  assert.throws(() => parseRunManifest(manifestJson({ version: 2 })), /newer than this tool understands/)
   assert.throws(() => parseRunManifest(manifestJson({ version: undefined })), /expected "version": 1/)
   assert.throws(() => parseRunManifest(manifestJson({ version: '1' })), /expected "version": 1/)
 })

@@ -449,6 +449,7 @@ export default function App() {
   const saveManifest = useCallback(() => {
     downloadManifest(
       buildManifest(results, {
+        tool: 'ipfs2foc-app',
         network: TARGET_NETWORK,
         relayBase,
         gateway,

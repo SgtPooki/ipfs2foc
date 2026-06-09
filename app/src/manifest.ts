@@ -1,43 +1,9 @@
-// The run manifest: the portable artifact the prepare step produces. It carries
-// what the submit step needs — the per-piece pull URLs and the commitments — and
-// is consumable by the CLI `pdp-submit --source-relay` or an in-browser signing
-// flow.
-import type { PieceResult } from './commp.ts'
+// The run manifest type, builder, and validator live in `ipfs2foc-core/manifest`
+// (the single source of truth shared with the CLI). This module re-exports them
+// and adds the browser-only download helper.
+export { buildManifest, MANIFEST_VERSION, type ManifestPiece, type RunManifest } from 'ipfs2foc-core/manifest'
 
-export interface RunManifest {
-  version: 1
-  tool: 'ipfs2foc-app'
-  createdAt: string
-  network: string
-  relayBase: string
-  gateway: string
-  pieces: Array<{
-    cid: string
-    pieceCid: string
-    rawSize: number
-    sourceUrl: string
-  }>
-}
-
-export function buildManifest(
-  results: PieceResult[],
-  opts: { network: string; relayBase: string; gateway: string; now: string }
-): RunManifest {
-  return {
-    version: 1,
-    tool: 'ipfs2foc-app',
-    createdAt: opts.now,
-    network: opts.network,
-    relayBase: opts.relayBase,
-    gateway: opts.gateway,
-    pieces: results.map((r) => ({
-      cid: r.cid,
-      pieceCid: r.pieceCid,
-      rawSize: r.rawSize,
-      sourceUrl: r.sourceUrl,
-    })),
-  }
-}
+import type { RunManifest } from 'ipfs2foc-core/manifest'
 
 export function downloadManifest(manifest: RunManifest): void {
   const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' })

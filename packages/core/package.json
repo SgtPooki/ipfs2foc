@@ -9,6 +9,7 @@
     "./block-source": "./src/block-source.ts",
     "./car-export": "./src/car-export.ts",
     "./car-stream-source": "./src/car-stream-source.ts",
+    "./manifest": "./src/manifest.ts",
     "./min-piece-guard": "./src/min-piece-guard.ts",
     "./piece-aggregate": "./src/piece-aggregate.ts"
   },

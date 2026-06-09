@@ -7,6 +7,7 @@
  *   commp   <cid> [--gateway URL]...        Fetch a CID as a CAR and print its PieceCID v2 + size.
  *   plan    --cids FILE [--db FILE] [opts]  Compute commitments + pack aggregates into the DB (resumable).
  *   import-manifest FILE [--db FILE] [opts] Load a browser-console run manifest as done pieces (recomputes nothing).
+ *   export  [--db FILE] [--out FILE] [opts] Write the DB's prepared pieces as a run manifest (round-trips to the browser).
  *   status  [--db FILE]                     Report progress and the aggregate plan.
  *   serve   [--db FILE] [opts]              Background commP runner + dashboard.
  *   gas     [--network N] [opts]            Current network base fee and whether to pause.
@@ -23,11 +24,12 @@
  * sqlite DB (default ./migrate.db).
  */
 
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { DEFAULT_PROBE_CONCURRENCY, DEFAULT_SAMPLE, formatAnalyzeText, runAnalyze } from './analyze.ts'
 import { runCreateDataSet } from './create-data-set.ts'
 import { MigrationDB } from './db.ts'
+import { buildExportManifest } from './export-manifest.ts'
 import { classifyBaseFee, DEFAULT_MAX_BASE_FEE, getBaseFee, resolveRpcUrl } from './gas.ts'
 import { DEFAULT_GATEWAYS, probeGateway } from './gateway.ts'
 import { stopGatewayBlocks } from './gateway-blocks.ts'
@@ -55,6 +57,7 @@ Usage:
   ipfs2foc plan   --cids <file> [--db <file>] [--gateway URL]... [--piece-size 32GiB]
                      [--concurrency 8]
   ipfs2foc import-manifest <manifest.json> [--db <file>] [--network mainnet|calibration]
+  ipfs2foc export [--db <file>] [--out <file>] [--network mainnet|calibration] [--source-relay <https-url>]
                      [--piece-size 32GiB] [--no-auto-pack]
   ipfs2foc status [--db <file>] [--json]
   ipfs2foc serve  [--db <file>] [--cids <file>] [--gateway URL]... [--piece-size 32GiB]
@@ -113,6 +116,7 @@ const KNOWN_COMMANDS = [
   'commp',
   'plan',
   'import-manifest',
+  'export',
   'status',
   'serve',
   'gas',
@@ -343,6 +347,50 @@ async function cmdImportManifest(argv: string[]): Promise<void> {
       log(`Oversized: ${summary.oversized.join(', ')} (piece padded size exceeds --piece-size aggregate budget)`)
     }
     console.log(JSON.stringify(summary, null, 2))
+  } finally {
+    db.close()
+  }
+}
+
+async function cmdExport(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      db: { type: 'string', default: DEFAULT_DB },
+      network: { type: 'string', default: 'mainnet' },
+      'source-relay': { type: 'string' },
+      out: { type: 'string' },
+    },
+  })
+  const network = values.network as string
+  if (network !== 'mainnet' && network !== 'calibration') {
+    throw new Error(`unknown --network ${network} (expected mainnet|calibration)`)
+  }
+
+  const db = new MigrationDB(values.db as string)
+  try {
+    const { manifest, excludedOversized } = buildExportManifest(db, {
+      network,
+      relayBase: values['source-relay'] as string | undefined,
+      now: new Date().toISOString(),
+    })
+    const json = JSON.stringify(manifest, null, 2)
+    const out = values.out as string | undefined
+    if (out == null) {
+      // No --out: the manifest is the command's output, so it pipes to a file or
+      // another tool. Progress goes to stderr (log) to keep stdout clean JSON.
+      log(`Exported ${manifest.pieces.length} piece(s) (network ${network}, gateway ${manifest.gateway})`)
+      console.log(json)
+    } else {
+      await writeFile(out, `${json}\n`)
+      log(`Exported ${manifest.pieces.length} piece(s) (network ${network}, gateway ${manifest.gateway}) -> ${out}`)
+    }
+    if (excludedOversized > 0) {
+      log(
+        `Note: ${excludedOversized} oversized piece(s) were excluded (padded size exceeds this run's --piece-size). ` +
+          `Re-pack with a larger --piece-size before exporting if they belong in this manifest.`
+      )
+    }
   } finally {
     db.close()
   }
@@ -787,6 +835,9 @@ async function main(): Promise<void> {
       break
     case 'import-manifest':
       await cmdImportManifest(rest)
+      break
+    case 'export':
+      await cmdExport(rest)
       break
     case 'status':
       await cmdStatus(rest)

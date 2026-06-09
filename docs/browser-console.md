@@ -30,6 +30,22 @@ recorded with a different commitment refuses the whole import, and re-importing
 the same file changes nothing. Prepare in the console, submit with a key that
 never enters a browser.
 
+The hand-off goes the other way too. `ipfs2foc export` writes the DB's prepared
+pieces back out as the same manifest format, so a run prepared (or imported) on
+the CLI can move to the console to sign with a browser wallet:
+
+```bash
+ipfs2foc export --db migrate.db --network calibration --out manifest.json
+# or pipe it: ipfs2foc export --db migrate.db > manifest.json
+```
+
+Both directions speak one versioned schema (the single source of truth is
+[`ipfs2foc-core/manifest`](https://github.com/SgtPooki/ipfs2foc/blob/main/packages/core/src/manifest.ts),
+where the v1 fields are documented). The manifest is prepare-level — commitments
+and pull URLs, not live submit state (transaction hashes, data-set id) — so it
+re-imports into a fresh DB and re-derives the same plan; the local `.db` file
+remains the record for resuming an in-flight submit on the same machine.
+
 ## Submitting from the browser
 
 Submission needs three one-time things, and the wallet panel reports all of
