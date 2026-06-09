@@ -10,12 +10,18 @@ import '@fontsource/jetbrains-mono/800.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './app.tsx'
+import { loadCapabilities } from './capabilities.ts'
+import LocalDashboard from './local-dashboard.tsx'
 import './styles.css'
+
+// One console, two backends: a local `ipfs2foc serve` daemon answers
+// /api/capabilities and gets the control-plane view; anywhere else (the
+// hosted static site) the fetch fails fast and the in-browser prepare +
+// signing flow renders with hosted defaults.
+const caps = await loadCapabilities()
 
 const root = document.getElementById('root')
 if (root == null) throw new Error('#root not found')
 createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>
+  <StrictMode>{caps.backend === 'local' ? <LocalDashboard caps={caps} /> : <App caps={caps} />}</StrictMode>
 )

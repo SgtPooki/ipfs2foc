@@ -1,4 +1,6 @@
+import type { Capabilities } from 'ipfs2foc-core/capabilities'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { DEFAULT_RELAY } from './capabilities.ts'
 import { computePiece, describePrepareFailure, type PieceResult } from './commp.ts'
 import { HASH_POOL_SIZE } from './hash-pool.ts'
 import { buildManifest, downloadManifest } from './manifest.ts'
@@ -25,8 +27,10 @@ import {
 import { useTabLifetime } from './tab-guard.ts'
 import { connectWallet, NETWORKS, networkOf, refreshWallet, switchToCalibration, type WalletState } from './wallet.ts'
 
-const DEFAULT_RELAY = 'https://ipfs2foc-relay.russell-3c4.workers.dev'
 const DEFAULT_GATEWAY = 'https://trustless-gateway.link'
+// The hosted signing flow is calibration-only for now: session/submit take a
+// network parameter already, but wallet switching knows only calibration.
+// Generalizing to capabilities.network lands with the local signing flow.
 const TARGET_NETWORK = 'calibration' as const
 
 type RowState =
@@ -99,7 +103,7 @@ function describeSubmitPhase(c: SubmitContextStatus): string {
   }
 }
 
-export default function App() {
+export default function App({ caps }: { caps: Capabilities }) {
   const [wallet, setWallet] = useState<WalletState | null>(null)
   const [walletError, setWalletError] = useState<string | null>(null)
   const [payments, setPayments] = useState<PaymentsStatus | null>(null)
@@ -110,7 +114,7 @@ export default function App() {
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [sessionDuration, setSessionDuration] = useState<bigint>(DEFAULT_SESSION_DURATION_SECONDS)
   const [cidsText, setCidsText] = useState('')
-  const [relayBase, setRelayBase] = useState(DEFAULT_RELAY)
+  const [relayBase, setRelayBase] = useState(caps.pieceBase ?? DEFAULT_RELAY)
   const [gateway, setGateway] = useState(DEFAULT_GATEWAY)
   const [rows, setRows] = useState<Row[]>([])
   const [running, setRunning] = useState(false)
