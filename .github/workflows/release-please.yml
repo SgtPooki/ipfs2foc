@@ -3,6 +3,10 @@ name: release-please
 on:
   push:
     branches: [main]
+  # Manual escape hatch: publish the current packages/cli version when the
+  # automatic publish was missed (e.g. a release was tagged but its publish job
+  # did not run). Runs the publish job regardless of release_created.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,8 +16,11 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      # Manifest mode: the action emits `releases_created` (aggregate) and
+      # `<path>--*` outputs, NOT the singular `release_created` of single-package
+      # mode. Gating on the wrong name silently skips publish (it did for 0.2.0).
+      release_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs['packages/cli--tag_name'] }}
     steps:
       # Opens/updates the release PR, and on merge cuts a GitHub release + tag.
       # Versioning stays pre-1.0: bump-minor-pre-major in release-please-config.json
@@ -25,7 +32,7 @@ jobs:
 
   publish:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
