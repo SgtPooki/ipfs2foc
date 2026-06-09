@@ -52,3 +52,4 @@ jobs:
       # OIDC cannot publish a package that does not yet exist.
       - run: npm install -g npm@latest
       - run: npm publish --access public --ignore-scripts
+        working-directory: packages/cli

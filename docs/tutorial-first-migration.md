@@ -13,7 +13,7 @@ known-good path.
 ## Before you start
 
 - **Node 26+** and ipfs2foc installed (`npm install -g ipfs2foc`, or
-  `node src/index.ts` from a clone).
+  `node packages/cli/src/index.ts` from a clone).
 - A **calibration wallet** exported as `PRIVATE_KEY` (`0x` + 64 hex), funded with
   calibration FIL and USDFC. Run the one-time payer setup (deposit + approvals):
 

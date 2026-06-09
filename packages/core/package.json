@@ -12,6 +12,9 @@
     "./min-piece-guard": "./src/min-piece-guard.ts",
     "./piece-aggregate": "./src/piece-aggregate.ts"
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@ipld/car": "^5.4.0",
     "@ipld/dag-cbor": "^9.2.7",

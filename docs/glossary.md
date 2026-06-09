@@ -10,7 +10,7 @@ largest-padded-first and zero-padded to the next power of two. `pdp-submit`
 computes it locally so the on-chain AddPieces validates against the
 provider's recomputation. See `commputils.PieceAggregateCommP` in
 [go-commp-utils](https://github.com/filecoin-project/go-commp-utils) and
-the local implementation in `src/piece-aggregate.ts`.
+the local implementation in `packages/core/src/piece-aggregate.ts`.
 
 ## Data set
 

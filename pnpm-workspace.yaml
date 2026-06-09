@@ -1,6 +1,7 @@
-# The CLI (root) and the browser app (app/) share one install so the app reuses
-# the repo's src/car-url.ts with the exact same multiformats / data-segment
-# versions the CLI commits over — no version drift between them.
+# One install across the CLI (packages/cli), the relay (packages/relay), the
+# shared core (packages/core), and the browser app (app/) so every consumer
+# resolves ipfs2foc-core with the exact same multiformats / data-segment
+# versions the commitments are computed over — no version drift between them.
 packages:
   - app
   - packages/*

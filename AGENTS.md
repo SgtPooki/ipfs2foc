@@ -27,19 +27,20 @@ skills first.
 
 | Editing | Load first |
 |---|---|
-| `src/report.ts`, `src/pdp-verifier.ts` | `onchain-canonical-not-side-channel`, `memory-aware-scaling`, `sample-not-sweep-at-scale`, `validate-at-each-step`, `prefer-upstream-libraries` |
-| `src/submit-pdp.ts`, `src/pdp.ts` | `addstatus-three-signals`, `validate-at-each-step`, `verify-actual-behavior`, `prefer-upstream-libraries`, `no-defense-in-depth-as-ignorance-mask` |
-| `src/create-data-set.ts` | `default-mainnet-network`, `prefer-upstream-libraries`, `validate-at-each-step` |
-| `src/gas.ts` | `default-mainnet-network`, `prefer-upstream-libraries` |
-| `src/migrate.ts`, `src/runner.ts`, `src/aggregate.ts`, `src/piece.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior` |
-| `src/gateway.ts`, `src/redirect-server*.ts`, fetch / HTTP code | `prefer-head-over-get`, `sample-not-sweep-at-scale`, `onchain-canonical-not-side-channel` |
-| `src/db.ts`, schema changes | `no-pre-release-migrations`, `memory-aware-scaling` |
-| `src/index.ts`, CLI flags, env vars, help text, `src/server.ts` | `sensible-defaults`, `default-mainnet-network`, `memory-aware-scaling`, `no-internal-jargon-leakage`, `anti-ai-smell` |
-| `src/metrics.ts`, `src/util.ts` | `no-internal-jargon-leakage`, `anti-ai-smell`, `documentation-voice` |
-| `src/piece-aggregate.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior` |
-| `src/analyze.ts` | `sensible-defaults`, `sample-not-sweep-at-scale`, `memory-aware-scaling`, `default-mainnet-network`, `prefer-head-over-get`, `no-internal-jargon-leakage`, `anti-ai-smell` |
-| `src/pack-cars.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior`, `prefer-upstream-libraries`, `no-defense-in-depth-as-ignorance-mask` |
-| `test/**` | `verify-actual-behavior`, `no-vendor-leakage`, `no-internal-jargon-leakage` |
+| `packages/cli/src/report.ts`, `packages/cli/src/pdp-verifier.ts` | `onchain-canonical-not-side-channel`, `memory-aware-scaling`, `sample-not-sweep-at-scale`, `validate-at-each-step`, `prefer-upstream-libraries` |
+| `packages/cli/src/submit-pdp.ts`, `packages/cli/src/pdp.ts` | `addstatus-three-signals`, `validate-at-each-step`, `verify-actual-behavior`, `prefer-upstream-libraries`, `no-defense-in-depth-as-ignorance-mask` |
+| `packages/cli/src/create-data-set.ts` | `default-mainnet-network`, `prefer-upstream-libraries`, `validate-at-each-step` |
+| `packages/cli/src/gas.ts` | `default-mainnet-network`, `prefer-upstream-libraries` |
+| `packages/cli/src/migrate.ts`, `packages/cli/src/runner.ts`, `packages/cli/src/aggregate.ts`, `packages/cli/src/piece.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior` |
+| `packages/cli/src/gateway.ts`, `packages/cli/src/redirect-server*.ts`, fetch / HTTP code | `prefer-head-over-get`, `sample-not-sweep-at-scale`, `onchain-canonical-not-side-channel` |
+| `packages/relay/handler.ts`, `packages/relay/worker.ts` | `prefer-head-over-get`, `onchain-canonical-not-side-channel`, `no-defense-in-depth-as-ignorance-mask` |
+| `packages/cli/src/db.ts`, schema changes | `no-pre-release-migrations`, `memory-aware-scaling` |
+| `packages/cli/src/index.ts`, CLI flags, env vars, help text, `packages/cli/src/server.ts` | `sensible-defaults`, `default-mainnet-network`, `memory-aware-scaling`, `no-internal-jargon-leakage`, `anti-ai-smell` |
+| `packages/cli/src/metrics.ts`, `packages/cli/src/util.ts` | `no-internal-jargon-leakage`, `anti-ai-smell`, `documentation-voice` |
+| `packages/core/src/piece-aggregate.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior` |
+| `packages/cli/src/analyze.ts` | `sensible-defaults`, `sample-not-sweep-at-scale`, `memory-aware-scaling`, `default-mainnet-network`, `prefer-head-over-get`, `no-internal-jargon-leakage`, `anti-ai-smell` |
+| `packages/cli/src/pack-cars.ts` | `sensible-defaults`, `memory-aware-scaling`, `verify-actual-behavior`, `prefer-upstream-libraries`, `no-defense-in-depth-as-ignorance-mask` |
+| `packages/cli/test/**`, `packages/relay/test/**` | `verify-actual-behavior`, `no-vendor-leakage`, `no-internal-jargon-leakage` |
 | `package.json` dep add / SDK swap | `prefer-upstream-libraries`, `verify-actual-behavior` |
 | `docs/**`, `README.md`, persistent docs | `documentation-voice`, `anti-ai-smell`, `no-vendor-leakage`, `no-internal-jargon-leakage` |
 | GitHub issue body | `github-issue-structure`, `anti-ai-smell`, `no-vendor-leakage`, `documentation-voice` |

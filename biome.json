@@ -83,7 +83,7 @@
   },
   "overrides": [
     {
-      "includes": ["test/**"],
+      "includes": ["**/test/**"],
       "linter": {
         "rules": {
           "style": { "noNonNullAssertion": "off" },

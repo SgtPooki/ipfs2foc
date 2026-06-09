@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildCarUrl, relayPullUrl } from 'ipfs2foc-core'
-import { handle, type RelayEnv } from '../relay/handler.ts'
+import { handle, type RelayEnv } from '../handler.ts'
 
 // Known-good values: a canonical CIDv1 source and the PieceCID v2 computed over
 // its CAR, matching test/commp-piece-cid-regression.test.ts. CID_V0 is a

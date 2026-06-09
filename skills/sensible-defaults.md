@@ -10,7 +10,7 @@
   - **Network:** `mainnet`. Calibration is `--network calibration`. See [`default-mainnet-network.md`](./default-mainnet-network.md).
   - **Cache:** on **(planned; not shipped)**. The cache flag will be `--car-store <dir>`; `docs/personas.md` tracks the design. Until shipped, do not add `--car-store` to new code paths.
   - **Sample size for verify / audit:** `100`. Full sweep is `--all` (or feature-specific, e.g. `--ipni-all`).
-  - **Fan-out concurrency** (per-command, see `src/index.ts` for shipped values):
+  - **Fan-out concurrency** (per-command, see `packages/cli/src/index.ts` for shipped values):
     - `--concurrency` (plan, serve): default `8`.
     - `--ipni-concurrency` (report's IPNI check): default `8`.
     - `--max-in-flight` (pdp-submit aggregates in flight): default `4`.

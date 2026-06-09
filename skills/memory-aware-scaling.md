@@ -20,10 +20,10 @@ const sample = pickN(allCids, 100)
 
 ### Good
 
-The shipped pattern lives in `src/report.ts` as `collectSample`. It walks aggregates in order, tracks an absolute index, and only loads an aggregate's member list when at least one stride target lands inside that aggregate's range. Peak memory is `O(sample size) + O(one aggregate's member count)`, not `O(total)`.
+The shipped pattern lives in `packages/cli/src/report.ts` as `collectSample`. It walks aggregates in order, tracks an absolute index, and only loads an aggregate's member list when at least one stride target lands inside that aggregate's range. Peak memory is `O(sample size) + O(one aggregate's member count)`, not `O(total)`.
 
 ```ts
-// see src/report.ts collectSample
+// see packages/cli/src/report.ts collectSample
 let absolute = 0
 let nextTarget = 0
 for (const agg of committedAggs) {

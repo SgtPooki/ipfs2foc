@@ -2,7 +2,7 @@
 
 A **stateless** redirect relay for the in-browser BYOW migration dApp. It is the
 shared, multi-tenant stand-in for the CLI's per-operator redirect server
-(`src/redirect-server.ts`): a browser tab cannot accept the inbound
+(`packages/cli/src/redirect-server.ts`): a browser tab cannot accept the inbound
 `/piece/{pieceCidV2}` pull a storage provider makes, so the dApp points the
 provider at this relay, and the relay 302-redirects each pull to the
 trustless-gateway CAR the piece was committed over.
@@ -75,7 +75,7 @@ Built-in allowlist: the hosts in `DEFAULT_GATEWAYS`
 2. **Real runtime, local** — `workerd` with no account needed:
 
    ```sh
-   cd relay && npx wrangler dev --local --port 8788
+   cd packages/relay && npx wrangler dev --local --port 8788
    H=trustless-gateway.link
    CID=bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi
    PCID=bafkzcibdxzhqyefkufvnsmqlyrjyr3el6affnfo3l7ipfncjjzjl4hkaqhbaema3
@@ -92,7 +92,7 @@ Built-in allowlist: the hosts in `DEFAULT_GATEWAYS`
 ## Deploy
 
 ```sh
-cd relay
+cd packages/relay
 npx wrangler deploy            # provisions nothing — stateless
 ```
 

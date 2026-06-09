@@ -16,7 +16,7 @@ pnpm build           # compile to dist/ (what gets published)
 ```
 
 ipfs2foc runs on **Node 26+** and uses the built-in `node:sqlite`. During
-development, run the CLI straight from source — `node src/index.ts <command>` —
+development, run the CLI straight from source — `node packages/cli/src/index.ts <command>` —
 since Node strips the TypeScript types at runtime. The published package ships
 compiled JS from `dist/` (Node refuses to strip types under `node_modules`).
 

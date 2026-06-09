@@ -10,6 +10,5 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "types": ["node"]
-  },
-  "include": ["src/**/*.ts", "test/**/*.ts", "relay/**/*.ts", "packages/*/src/**/*.ts"]
+  }
 }

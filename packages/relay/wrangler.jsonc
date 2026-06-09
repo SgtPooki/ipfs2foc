@@ -1,11 +1,11 @@
 {
   // Cloudflare Worker config for the ipfs2foc redirect relay (#23).
-  //   deploy: cd relay && npx wrangler deploy
-  //   dev:    cd relay && npx wrangler dev --local
+  //   deploy: cd packages/relay && npx wrangler deploy
+  //   dev:    cd packages/relay && npx wrangler dev --local
   //
   // The relay is STATELESS — no KV, no database, no bindings to provision. The
   // only config is the optional ALLOWED_GATEWAY_HOSTS var below.
-  "$schema": "../node_modules/wrangler/config-schema.json",
+  "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "ipfs2foc-relay",
   "main": "worker.ts",
   "compatibility_date": "2026-06-01",

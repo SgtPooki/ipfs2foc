@@ -1,0 +1,20 @@
+{
+  "name": "ipfs2foc-relay",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stateless Cloudflare Worker that 302-redirects storage-provider pulls to the trustless-gateway CAR a piece was committed over (ipfs2foc browser dApp, #23).",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev --local"
+  },
+  "dependencies": {
+    "ipfs2foc-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "wrangler": "^4.98.0"
+  }
+}

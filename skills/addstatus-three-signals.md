@@ -8,7 +8,7 @@
 - `txStatus='confirmed'` only means the tx landed on chain. It does not mean the inner AddPieces call succeeded.
 - Success requires all three: `txStatus==='confirmed'` AND `addMessageOk===true` AND `piecesAdded===true`.
 - Terminal states include `txStatus==='failed'` (with `ok=false`). Treat that as done-with-failure, not retryable.
-- In the call-site code comment, cite both `src/pdp.ts` `addStatus` (this repo) and `pdp/handlers.go:handleGetPieceAdditionStatus` (Curio source).
+- In the call-site code comment, cite both `packages/cli/src/pdp.ts` `addStatus` (this repo) and `pdp/handlers.go:handleGetPieceAdditionStatus` (Curio source).
 
 ## Examples
 

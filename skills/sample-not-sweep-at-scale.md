@@ -7,7 +7,7 @@
 - Default to a stride sample. Gate the full sweep behind `--all`.
 - Use deterministic stride: `offset = floor(i * total / sampleSize)` for `i in 0..sampleSize-1`.
 - Print the sample size and stride so operators can reproduce the run.
-- Cap fan-out concurrency. Defaults vary by command; see [`sensible-defaults.md`](./sensible-defaults.md) for the shipped values in `src/index.ts` (e.g. `--concurrency` and `--ipni-concurrency` default `8`; `--max-in-flight` defaults `4`). Expose the relevant flag for operators with headroom.
+- Cap fan-out concurrency. Defaults vary by command; see [`sensible-defaults.md`](./sensible-defaults.md) for the shipped values in `packages/cli/src/index.ts` (e.g. `--concurrency` and `--ipni-concurrency` default `8`; `--max-in-flight` defaults `4`). Expose the relevant flag for operators with headroom.
 
 ## Examples
 

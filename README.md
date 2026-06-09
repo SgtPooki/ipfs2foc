@@ -50,7 +50,7 @@ From source (development uses [pnpm](https://pnpm.io)):
 git clone https://github.com/SgtPooki/ipfs2foc
 cd ipfs2foc
 pnpm install
-node src/index.ts --help     # run directly; Node 26 strips the TypeScript types
+node packages/cli/src/index.ts --help   # run directly; Node 26 strips the TypeScript types
 ```
 
 ## Requirements
@@ -339,7 +339,7 @@ the PieceCID you supply, so the commP pass (step 1) runs regardless.
 The aggregate root is the **aggregate piece commitment**: the trunc-254 merkle of the
 sub-piece commitments, largest-first, zero-padded to the next power of two. The same
 value is recomputed by Curio (`commputils.PieceAggregateCommP`, `go-commp-utils`) on
-add. `src/piece-aggregate.ts` computes it locally so the on-chain add validates; the
+add. `packages/core/src/piece-aggregate.ts` computes it locally so the on-chain add validates; the
 add rejects a mismatched root, so a successful commit confirms the local computation.
 This value is verified byte-for-byte against `go-commp-utils` in `test/`.
 

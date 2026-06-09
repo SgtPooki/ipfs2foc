@@ -33,8 +33,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      # Install the whole workspace so the app can reuse src/car-url.ts with the
-      # CLI's exact multiformats / data-segment versions.
+      # Install the whole workspace so the app can reuse ipfs2foc-core
+      # (packages/core) with the exact multiformats / data-segment versions the
+      # commitments are computed over.
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter ipfs2foc-app build
       - uses: actions/upload-pages-artifact@v3
