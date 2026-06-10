@@ -261,6 +261,15 @@ mutations. During development, point `serve` at a freshly built console with
 with base `/`, the way `pnpm -C packages/cli build` does — a GitHub Pages build uses
 a different base path and will not load).
 
+The console can also submit on chain without `PRIVATE_KEY`: connect a wallet in the
+Signing panel and grant a session key (one wallet transaction, scoped to
+CreateDataSet + AddPieces with an explicit expiry). The daemon verifies the grant on
+chain, keeps the key in the migration database, and drives the provider pull/add
+itself — the tab can close mid-run, and extending the session in the browser keeps a
+long run going without restarting it. The stored key signs nothing beyond those two
+operations and can be revoked from the console at any time; treat the `.db` file
+like the working state it is.
+
 ## Recovery commands
 
 These re-arm aggregates that did not reach `committed`. They are not part of a

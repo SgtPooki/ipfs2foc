@@ -5,13 +5,16 @@
  * inline dashboard page the CLI used to ship — same console bundle, picked at
  * startup by GET /api/capabilities (see capabilities.ts).
  *
- * On-chain submission is not part of the local backend yet
- * (supportsBrowserSigning is false): once aggregates are packed, the operator
- * runs the CLI commit commands shown below.
+ * On-chain submission (when the daemon reports supportsBrowserSigning): the
+ * wallet grants a scoped session key in the Signing panel, the daemon holds
+ * it and drives presign/pull/add itself — the Submit panel just starts the
+ * run and the Aggregates table shows its lifecycle. Without signing support
+ * the panel falls back to copyable CLI commands.
  */
 
 import type { Capabilities } from 'ipfs2foc-core/capabilities'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import LocalSigningPanel, { type ServerSessionInfo } from './local-signing.tsx'
 
 interface ServeStatus {
   state: 'idle' | 'running' | 'paused'
@@ -33,6 +36,26 @@ interface ServeStatus {
   gas: { baseFee: string; multipleOfFloor: number; level: string; pause: boolean } | null
   // Optional: a server older than the piece-ingress feature omits it.
   ingress?: { publicBase: string | null; reachable: boolean | null } | null
+  // Optional: servers without browser signing omit both.
+  session?: ServerSessionInfo | null
+  submit?: {
+    running: boolean
+    kind?: 'submit' | 'create-data-set'
+    dataSetId: number | null
+    startedAt: string | null
+    finishedAt?: string | null
+    lastError: string | null
+    lastResult?: { dataSetId: number; txHash: string } | null
+  } | null
+}
+
+/** 409 reasons from POST /api/submit and /api/data-sets, in operator words. */
+const REFUSAL_MESSAGES: Record<string, string> = {
+  'no-session': 'no signing session on the daemon — grant one in the Signing panel',
+  'session-margin': 'the session expires within the safety margin — extend it in the Signing panel, then retry',
+  'ingress-unreachable': 'providers cannot reach this daemon — check the pieces chip / tunnel, then retry',
+  'job-running': 'a chain job is already in progress — wait for it to finish',
+  'network-mismatch': 'the session targets a different network than this daemon',
 }
 
 const POLL_MS = 2000
@@ -57,6 +80,9 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
   const [addMsg, setAddMsg] = useState('')
   const [gwMsg, setGwMsg] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
+  const [dataSetIdText, setDataSetIdText] = useState('')
+  const [providerIdText, setProviderIdText] = useState('')
+  const [submitMsg, setSubmitMsg] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const refresh = useCallback(async () => {
@@ -110,6 +136,32 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
     })
   }, [])
 
+  const postChainJob = useCallback(
+    async (path: string, body: unknown) => {
+      setSubmitMsg(null)
+      const res = await fetch(`${api}/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const parsed = (await res.json().catch(() => null)) as { reason?: string; error?: string } | null
+        setSubmitMsg(REFUSAL_MESSAGES[parsed?.reason ?? ''] ?? parsed?.error ?? `request failed (${res.status})`)
+      }
+      void refresh()
+    },
+    [api, refresh]
+  )
+
+  const startSubmit = useCallback(
+    () => postChainJob('submit', { dataSetId: Number(dataSetIdText.trim()) }),
+    [postChainJob, dataSetIdText]
+  )
+  const createDataSet = useCallback(
+    () => postChainJob('data-sets', { providerId: Number(providerIdText.trim()) }),
+    [postChainJob, providerIdText]
+  )
+
   const counts = status?.counts ?? { pending: 0, processing: 0, done: 0, failed: 0 }
   const total = counts.done + counts.processing + counts.pending + counts.failed || 1
   const state = status?.state ?? 'idle'
@@ -141,6 +193,15 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
           [`ipfs2foc pdp-submit --db ${db} --data-set-id <id> --source-base ${publicBase}${net}`, 'second terminal'],
           [`ipfs2foc report --db ${db} --data-set-id <id>${net}`, 'confirm on chain'],
         ]
+
+  const signing = caps.supportsBrowserSigning
+  const serverSession = status?.session ?? null
+  const submitJob = status?.submit ?? null
+  const sessionReady = serverSession?.present === true && serverSession.valid === true
+
+  // Sections after Aggregates are conditional — number them in render order.
+  let panelIndex = 2
+  const nextPanelNo = () => String(++panelIndex).padStart(2, '0')
 
   return (
     <div className="shell" style={stale ? { opacity: 0.6 } : undefined}>
@@ -297,10 +358,98 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
         )}
       </section>
 
-      {toCommit > 0 && (
+      {signing && (
+        <LocalSigningPanel
+          apiBase={api}
+          network={caps.network}
+          onChanged={() => void refresh()}
+          panelNo={nextPanelNo()}
+          serverSession={serverSession}
+        />
+      )}
+
+      {signing && toCommit > 0 && (
         <section className="panel">
           <div className="panel-head">
-            <span className="panel-no">03</span>
+            <span className="panel-no">{nextPanelNo()}</span>
+            <h2>Submit on chain</h2>
+            <span className="panel-note">{toCommit} aggregate(s) to commit</span>
+          </div>
+          <p className="hint">
+            The daemon pulls each aggregate to the provider and lands the on-chain add, signing with the session key —
+            progress shows in the Aggregates table. A data set id is reusable across runs.
+          </p>
+          <div className="field">
+            <span>data set id</span>
+            <input onChange={(e) => setDataSetIdText(e.target.value)} placeholder="42" value={dataSetIdText} />
+          </div>
+          <div className="actions">
+            <button
+              className="btn primary"
+              disabled={
+                submitJob?.running === true ||
+                !sessionReady ||
+                reachable !== true ||
+                !/^\d+$/.test(dataSetIdText.trim())
+              }
+              onClick={() => void startSubmit()}
+              type="button"
+            >
+              Submit on chain
+            </button>
+            {submitJob?.running === true && (
+              <span className="chip">
+                {submitJob.kind === 'create-data-set'
+                  ? 'creating data set…'
+                  : `submitting to data set ${submitJob.dataSetId}…`}
+              </span>
+            )}
+            {!sessionReady && <span className="hint">needs a signing session (panel above)</span>}
+            {sessionReady && reachable !== true && (
+              <span className="hint">needs reachable public ingress (pieces chip)</span>
+            )}
+          </div>
+          <div className="field">
+            <span>new data set</span>
+            <input
+              onChange={(e) => setProviderIdText(e.target.value)}
+              placeholder="provider id"
+              value={providerIdText}
+            />
+          </div>
+          <div className="actions">
+            <button
+              className="btn"
+              disabled={submitJob?.running === true || !sessionReady || !/^\d+$/.test(providerIdText.trim())}
+              onClick={() => void createDataSet()}
+              type="button"
+            >
+              Create data set
+            </button>
+            {submitJob?.lastResult != null && (
+              <span className="dim">
+                data set {submitJob.lastResult.dataSetId} · tx{' '}
+                <button
+                  className={`copy mono${copied === submitJob.lastResult.txHash ? ' ok-text' : ''}`}
+                  onClick={() => submitJob.lastResult != null && copy(submitJob.lastResult.txHash)}
+                  type="button"
+                >
+                  {trunc(submitJob.lastResult.txHash)}
+                </button>
+              </span>
+            )}
+          </div>
+          {submitMsg && <p className="err-text">{submitMsg}</p>}
+          {submitJob?.lastError != null && submitJob.running === false && (
+            <p className="err-text">last run: {submitJob.lastError}</p>
+          )}
+        </section>
+      )}
+
+      {!signing && toCommit > 0 && (
+        <section className="panel">
+          <div className="panel-head">
+            <span className="panel-no">{nextPanelNo()}</span>
             <h2>Commit on chain</h2>
             <span className="panel-note">{toCommit} aggregate(s) to commit</span>
           </div>
@@ -329,7 +478,7 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
 
       <section className="panel">
         <div className="panel-head">
-          <span className="panel-no">04</span>
+          <span className="panel-no">{nextPanelNo()}</span>
           <h2>Add CIDs</h2>
         </div>
         <textarea
@@ -349,7 +498,7 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
 
       <section className="panel">
         <div className="panel-head">
-          <span className="panel-no">05</span>
+          <span className="panel-no">{nextPanelNo()}</span>
           <h2>Gateways</h2>
         </div>
         <div className="field">
@@ -380,7 +529,7 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
 
       <section className="panel">
         <div className="panel-head">
-          <span className="panel-no">06</span>
+          <span className="panel-no">{nextPanelNo()}</span>
           <h2>Failures</h2>
           <span className="panel-note">{failures.length}</span>
         </div>

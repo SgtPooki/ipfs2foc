@@ -54,6 +54,13 @@ export interface SessionState {
   expiresAt: bigint
   /** Signs FWSS typed-data in place of the wallet. Pass as Synapse sessionClient. */
   sessionClient: SessionClient
+  /**
+   * Raw key material — carried so a trusted LOCAL daemon can be handed the
+   * session (#25: the serve daemon signs presigns and drives pull/add). Kept
+   * on the state (not just in IndexedDB) because storage writes silently
+   * no-op in private windows. Never log it; the hosted flow never reads it.
+   */
+  privateKey: Hex
 }
 
 const nowSeconds = (): bigint => BigInt(Math.floor(Date.now() / 1000))
@@ -208,5 +215,5 @@ async function buildSession(
 ): Promise<SessionState> {
   const { SessionKey, chains } = await deps()
   const sessionKey = SessionKey.fromSecp256k1({ privateKey, root, chain: chains[network] })
-  return { sessionAddress, expiresAt, sessionClient: sessionKey.client }
+  return { sessionAddress, expiresAt, sessionClient: sessionKey.client, privateKey }
 }
