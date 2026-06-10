@@ -24,8 +24,10 @@ export interface SavedRun {
 }
 
 /**
- * One storage context's submit progress. Everything needed to resume after a
- * reload WITHOUT re-signing or re-submitting:
+ * One pull/commit chunk of a provider copy. Providers cap the pieces per pull
+ * request, so a run is split into chunks, each with its own presign and its
+ * own on-chain add. Everything needed to resume a chunk after a reload
+ * WITHOUT re-signing or re-submitting:
  * - `extraData` is the presigned authorization — the provider's pull endpoint
  *   is idempotent keyed on it, so re-pulling with the same blob is safe;
  *   presigning again would mint a different blob and a duplicate request.
@@ -35,36 +37,103 @@ export interface SavedRun {
  *   commit.
  * All bigints are stored as strings so the record survives JSON round-trips.
  */
-export interface SavedSubmitContext {
-  role: 'primary' | 'secondary'
-  providerId: string
-  providerName: string
-  serviceURL: string
+export interface SavedChunk {
+  /** This chunk's PieceCIDs, fixed when the run was planned — resume reuses them. */
+  pieceCids: string[]
   extraData?: `0x${string}`
   /**
    * Data set the presign targeted: present means the extraData is an
    * AddPieces blob for that set, absent means create-and-add. A resumed
-   * context whose resolved data set differs must discard the extraData (and
+   * chunk whose resolved data set differs must discard the extraData (and
    * may, because nothing was submitted yet once txHash is absent).
    */
   signedDataSetId?: string
   pullComplete?: boolean
   txHash?: `0x${string}`
-  /** Set once the commit confirmed on chain. */
-  dataSetId?: string
   pieceIds?: string[]
+  /** The chunk's add confirmed on chain. */
+  committed?: boolean
+}
+
+export interface SavedSubmitContext {
+  role: 'primary' | 'secondary'
+  providerId: string
+  providerName: string
+  serviceURL: string
+  /** Resolved after this copy's first committed chunk; later chunks add to it. */
+  dataSetId?: string
+  /** Aggregate of the committed chunks' piece ids (display convenience). */
+  pieceIds?: string[]
+  chunks: SavedChunk[]
   error?: string
 }
 
 export interface SavedSubmit {
+  /** Bump on shape changes; loadSubmit migrates or discards older records. */
+  version: 2
   /** Wallet + network the run was signed under — a different pair must not resume it. */
   root: `0x${string}`
   chainId: number
   copies: number
-  /** PieceCIDs covered by every presign in this run, sorted. */
+  /** PieceCIDs covered by this run (across all chunks), sorted. */
   pieceCids: string[]
   contexts: SavedSubmitContext[]
   updatedAt: string
+}
+
+/** The pre-chunking record shape (no version field). */
+interface LegacySavedSubmit {
+  root: `0x${string}`
+  chainId: number
+  copies: number
+  pieceCids: string[]
+  updatedAt: string
+  contexts: Array<{
+    role: 'primary' | 'secondary'
+    providerId: string
+    providerName: string
+    serviceURL: string
+    extraData?: `0x${string}`
+    signedDataSetId?: string
+    pullComplete?: boolean
+    txHash?: `0x${string}`
+    dataSetId?: string
+    pieceIds?: string[]
+    error?: string
+  }>
+}
+
+/** A legacy record is exactly a one-chunk run: carry its state over intact. */
+function migrateLegacySubmit(old: LegacySavedSubmit): SavedSubmit | null {
+  if (!Array.isArray(old.contexts) || !Array.isArray(old.pieceCids)) return null
+  return {
+    version: 2,
+    root: old.root,
+    chainId: old.chainId,
+    copies: old.copies,
+    pieceCids: old.pieceCids,
+    updatedAt: old.updatedAt,
+    contexts: old.contexts.map((c) => ({
+      role: c.role,
+      providerId: c.providerId,
+      providerName: c.providerName,
+      serviceURL: c.serviceURL,
+      dataSetId: c.dataSetId,
+      pieceIds: c.pieceIds,
+      error: c.error,
+      chunks: [
+        {
+          pieceCids: old.pieceCids,
+          extraData: c.extraData,
+          signedDataSetId: c.signedDataSetId,
+          pullComplete: c.pullComplete,
+          txHash: c.txHash,
+          pieceIds: c.pieceIds,
+          committed: c.dataSetId != null && c.pieceIds != null,
+        },
+      ],
+    })),
+  }
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -117,7 +186,10 @@ export async function clearRun(): Promise<void> {
 
 export async function loadSubmit(): Promise<SavedSubmit | null> {
   try {
-    return ((await withStore('readonly', (s) => s.get(SUBMIT_KEY))) as SavedSubmit | undefined) ?? null
+    const raw = (await withStore('readonly', (s) => s.get(SUBMIT_KEY))) as SavedSubmit | LegacySavedSubmit | undefined
+    if (raw == null) return null
+    if ('version' in raw && raw.version === 2) return raw
+    return migrateLegacySubmit(raw as LegacySavedSubmit)
   } catch {
     return null
   }

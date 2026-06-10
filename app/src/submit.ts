@@ -6,10 +6,12 @@
 // every authorization is an EIP-712 presign by the session key, applied
 // in-page without a prompt.
 //
-// Transaction shape per provider copy: a single create-and-add (or AddPieces
-// when a matching data set already exists) covering EVERY piece in the run,
-// submitted to the chain by the provider. One presign covers the pull and the
-// commit for that provider.
+// Transaction shape per provider copy: the run is split into chunks (providers
+// cap the pieces per pull request), and each chunk gets its own presign, pull,
+// and on-chain add — the first chunk creates the data set (create-and-add,
+// or plain AddPieces when a matching data set already exists), later chunks
+// add to the resolved data set. Every transaction is submitted to the chain
+// by the provider; one presign covers one chunk's pull and commit.
 //
 // Reload safety (the at-most-once invariant):
 // - presigns are persisted BEFORE the first pull. The provider's pull
@@ -31,9 +33,18 @@
 //   reverted AddPieces call).
 import type { PieceCID } from '@filoz/synapse-core/piece'
 import type { PieceResult } from './commp.ts'
-import { loadSubmit, type SavedSubmit, type SavedSubmitContext, saveSubmit } from './run-store.ts'
+import { loadSubmit, type SavedChunk, type SavedSubmit, type SavedSubmitContext, saveSubmit } from './run-store.ts'
 import { type SessionState, sessionCanPresign, walletChainClient } from './session.ts'
 import { NETWORKS, type NetworkKey, type WalletState } from './wallet.ts'
+
+/**
+ * Max pieces per pull request / per on-chain add. Provider pull admission
+ * caps the count (observed: a provider refusing 73 with "maximum allowed per
+ * pull (40)"); the cap is not advertised in the SP registry, so this mirrors
+ * the CLI's `--pull-batch` default, which also respects the 8192-byte FVM
+ * event cap on the simulated AddPieces.
+ */
+export const PULL_CHUNK_SIZE = 32
 
 export type SubmitPhase = 'queued' | 'presigning' | 'pulling' | 'committing' | 'confirming' | 'done' | 'failed'
 
@@ -41,6 +52,8 @@ export interface SubmitContextStatus extends SavedSubmitContext {
   phase: SubmitPhase
   /** Live per-piece pull status (pieceCid → pending|inProgress|retrying|complete|failed). */
   pullStatus?: Record<string, string>
+  /** Live chunk cursor for the status line; only meaningful while running. */
+  chunkIndex?: number
 }
 
 export interface SubmitState {
@@ -92,8 +105,8 @@ export interface SubmitOptions {
 const pieceKey = (pieceCids: string[]): string => [...pieceCids].sort().join('\n')
 
 const derivePhase = (c: SavedSubmitContext): SubmitPhase => {
-  if (c.dataSetId != null && c.pieceIds != null) return 'done'
-  if (c.txHash != null) return 'confirming'
+  if (c.chunks.length > 0 && c.chunks.every((ch) => ch.committed === true)) return 'done'
+  if (c.chunks.some((ch) => ch.txHash != null && ch.committed !== true)) return 'confirming'
   return 'queued'
 }
 
@@ -161,12 +174,33 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
   type Ctx = Awaited<ReturnType<(typeof synapse)['storage']['createContext']>>
 
   const record: SavedSubmit = prior ?? {
+    version: 2,
     root: wallet.address,
     chainId: NETWORKS[network].id,
     copies: opts.copies,
     pieceCids: parsed.map((p) => p.pieceCid.toString()).sort(),
     contexts: [],
     updatedAt: new Date().toISOString(),
+  }
+
+  const parsedByCid = new Map(parsed.map((p) => [p.pieceCid.toString(), p]))
+  const commitPiecesByCid = new Map(commitPieces.map((p) => [p.pieceCid.toString(), p]))
+  const commitPiecesFor = (chunk: SavedChunk) =>
+    chunk.pieceCids.map((cid) => {
+      const p = commitPiecesByCid.get(cid)
+      if (p == null) throw new Error(`saved chunk references unknown piece ${cid}`)
+      return p
+    })
+  // Chunk piece sets are fixed when the run is planned and reused verbatim on
+  // resume — re-splitting under a changed PULL_CHUNK_SIZE would orphan the
+  // presigns already persisted against the original sets.
+  const planChunks = (): SavedChunk[] => {
+    const cids = parsed.map((p) => p.pieceCid.toString())
+    const chunks: SavedChunk[] = []
+    for (let i = 0; i < cids.length; i += PULL_CHUNK_SIZE) {
+      chunks.push({ pieceCids: cids.slice(i, i + PULL_CHUNK_SIZE) })
+    }
+    return chunks
   }
 
   const live: SubmitContextStatus[] = record.contexts.map((c) => ({ ...c, phase: derivePhase(c) }))
@@ -177,7 +211,7 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
       contexts: live.map((c) => ({ ...c, pullStatus: c.pullStatus ? { ...c.pullStatus } : undefined })),
     })
   const persist = async () => {
-    record.contexts = live.map(({ phase, pullStatus, ...saved }) => saved)
+    record.contexts = live.map(({ phase, pullStatus, chunkIndex, ...saved }) => saved)
     record.updatedAt = new Date().toISOString()
     try {
       await saveSubmit(record)
@@ -206,33 +240,52 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
     // primary and distinct secondaries; the operator chooses only the count.
     const ctxs = await synapse.storage.createContexts({ copies: record.copies, metadata })
     for (const [i, ctx] of ctxs.entries()) {
-      liveCtx.set(ctx.provider.id.toString(), ctx)
+      // A context may resolve straight to an existing matching data set; pin
+      // it so every chunk takes the plain AddPieces path from the start.
+      const resolved = ctx.dataSetId?.toString()
+      liveCtx.set(`${ctx.provider.id.toString()}:${resolved ?? 'new'}`, ctx)
       live.push({
         role: i === 0 ? 'primary' : 'secondary',
         providerId: ctx.provider.id.toString(),
         providerName: ctx.provider.name,
         serviceURL: ctx.provider.pdp.serviceURL,
+        dataSetId: resolved,
+        chunks: planChunks(),
         phase: 'queued',
       })
     }
-  } else {
-    // Re-bind a live context only where work remains; done and
-    // pending-confirmation entries resume from the record alone.
-    for (const c of live) {
-      if (c.phase !== 'queued') continue
-      const ctx = await synapse.storage.createContext({ providerId: BigInt(c.providerId), metadata })
-      const resolved = ctx.dataSetId?.toString() ?? null
-      if (c.extraData != null && (c.signedDataSetId ?? null) !== resolved) {
-        // The blob was signed against a different data set state than the
-        // provider resolves to now. Nothing was submitted under it (no
-        // txHash), so discard and re-presign; the orphaned parked pull ages
-        // out provider-side.
-        c.extraData = undefined
-        c.signedDataSetId = undefined
-        c.pullComplete = undefined
+  }
+  // Resumed contexts re-bind lazily in bindCtx, keyed on the data set they
+  // resolved to; per-chunk presign staleness is checked at presign time.
+
+  /**
+   * Bind (or re-bind) the live storage context for a copy. Before the first
+   * committed chunk the provider resolves the data set itself (an existing
+   * metadata match, or create-and-add); once `dataSetId` is known every later
+   * chunk targets it explicitly so the AddPieces path is deterministic.
+   */
+  const bindCtx = async (c: SubmitContextStatus): Promise<Ctx> => {
+    const key = `${c.providerId}:${c.dataSetId ?? 'new'}`
+    const cached = liveCtx.get(key)
+    if (cached != null) return cached
+    let ctx: Ctx
+    if (c.dataSetId == null) {
+      ctx = await synapse.storage.createContext({ providerId: BigInt(c.providerId), metadata })
+      if (ctx.dataSetId != null) {
+        // The provider already resolves to a matching data set — pin it so
+        // every chunk (including the first) takes the plain AddPieces path.
+        c.dataSetId = ctx.dataSetId.toString()
+        liveCtx.set(`${c.providerId}:${c.dataSetId}`, ctx)
+        await persist()
+        return ctx
       }
-      liveCtx.set(c.providerId, ctx)
+    } else {
+      const [bound] = await synapse.storage.createContexts({ dataSetIds: [BigInt(c.dataSetId)], metadata })
+      if (bound == null) throw new Error(`no storage context for data set ${c.dataSetId}`)
+      ctx = bound
     }
+    liveCtx.set(key, ctx)
+    return ctx
   }
   // Also the resumability probe: a failed write flips `persisted` before any
   // signature exists, so the UI can warn while backing out is still free.
@@ -243,8 +296,8 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
   // so a too-small piece can never strand a half-signed run.
   for (const c of live) {
     if (opts.ignoreMinPieceSize === true) break
-    const ctx = liveCtx.get(c.providerId)
-    if (ctx == null || c.phase !== 'queued') continue
+    if (c.phase !== 'queued') continue
+    const ctx = await bindCtx(c)
     const check = guard.checkMinPieceSize(
       parsed.map((p) => ({ pieceCid: p.pieceCid.toString() })),
       ctx.provider.pdp.minPieceSizeInBytes
@@ -268,8 +321,18 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
     }
   }
 
-  const ensurePresigned = async (c: SubmitContextStatus, ctx: Ctx) => {
-    if (c.extraData != null) return
+  const ensurePresigned = async (c: SubmitContextStatus, chunk: SavedChunk, ctx: Ctx) => {
+    const resolved = ctx.dataSetId?.toString() ?? null
+    if (chunk.extraData != null) {
+      if ((chunk.signedDataSetId ?? null) === resolved) return
+      // The blob was signed against a different data set state than the
+      // provider resolves to now. Nothing was submitted under it (no
+      // txHash), so discard and re-presign; the orphaned parked pull ages
+      // out provider-side.
+      chunk.extraData = undefined
+      chunk.signedDataSetId = undefined
+      chunk.pullComplete = undefined
+    }
     if (!sessionCanPresign(session)) {
       throw new SubmitBlockedError(
         'session expires within the safety margin — extend it before submitting',
@@ -278,22 +341,43 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
     }
     c.phase = 'presigning'
     emit()
-    c.signedDataSetId = ctx.dataSetId?.toString()
-    c.extraData = await ctx.presignForCommit(commitPieces)
+    chunk.signedDataSetId = resolved ?? undefined
+    chunk.extraData = await ctx.presignForCommit(commitPiecesFor(chunk))
     // Persisted before the pull goes out: the blob is the idempotency key a
     // resumed run needs to re-issue this pull without duplicating it.
     await persist()
   }
 
-  const pullTo = async (c: SubmitContextStatus, ctx: Ctx, from: string | ((pieceCid: PieceCID) => string)) => {
-    if (c.pullComplete === true) return
+  // The whole-run pull map the UI counts: pieces from already-committed or
+  // already-pulled chunks start as complete so a resumed run reads honestly.
+  const seedPullStatus = (c: SubmitContextStatus) => {
+    if (c.pullStatus != null) return
+    c.pullStatus = {}
+    for (const chunk of c.chunks) {
+      const settled = chunk.committed === true || chunk.pullComplete === true
+      for (const cid of chunk.pieceCids) c.pullStatus[cid] = settled ? 'complete' : 'pending'
+    }
+  }
+
+  const pullChunk = async (
+    c: SubmitContextStatus,
+    chunk: SavedChunk,
+    ctx: Ctx,
+    from: string | ((pieceCid: PieceCID) => string)
+  ) => {
+    if (chunk.pullComplete === true) return
     c.phase = 'pulling'
-    c.pullStatus = Object.fromEntries(parsed.map((p) => [p.pieceCid.toString(), 'pending']))
+    seedPullStatus(c)
     emit()
+    const chunkPieces = chunk.pieceCids.map((cid) => {
+      const p = parsedByCid.get(cid)
+      if (p == null) throw new Error(`saved chunk references unknown piece ${cid}`)
+      return p.pieceCid
+    })
     const result = await ctx.pull({
-      pieces: parsed.map((p) => p.pieceCid),
+      pieces: chunkPieces,
       from,
-      extraData: c.extraData,
+      extraData: chunk.extraData,
       onProgress: (pieceCid, status) => {
         if (c.pullStatus != null) c.pullStatus[pieceCid.toString()] = status
         emit()
@@ -303,7 +387,7 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
       const failed = result.pieces.filter((p) => p.status !== 'complete').map((p) => p.pieceCid.toString())
       throw new Error(`provider could not pull ${failed.length} piece(s): ${failed.join(', ')}`)
     }
-    c.pullComplete = true
+    chunk.pullComplete = true
     await persist()
   }
 
@@ -328,60 +412,68 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
     throw lastErr
   }
 
-  const confirmCommit = async (c: SubmitContextStatus, ctx: Ctx | undefined) => {
-    if (c.phase === 'done') return
-    if (c.txHash == null) {
+  const finishChunk = (c: SubmitContextStatus, chunk: SavedChunk) => {
+    chunk.committed = true
+    c.pieceIds = c.chunks.flatMap((ch) => ch.pieceIds ?? [])
+  }
+
+  const commitChunk = async (c: SubmitContextStatus, chunk: SavedChunk, ctx: Ctx | undefined) => {
+    if (chunk.committed === true) return
+    if (chunk.txHash == null) {
       if (ctx == null) throw new Error('storage context unavailable')
       c.phase = 'committing'
       emit()
       try {
         const result = await ctx.commit({
-          pieces: commitPieces,
-          extraData: c.extraData,
+          pieces: commitPiecesFor(chunk),
+          extraData: chunk.extraData,
           onSubmitted: (txHash) => {
             // The provider accepted the submission — record the hash NOW so a
             // reload polls its status instead of ever re-posting commit.
-            c.txHash = txHash
+            chunk.txHash = txHash
             c.phase = 'confirming'
             void persist()
           },
         })
         c.dataSetId = result.dataSetId.toString()
-        c.pieceIds = result.pieceIds.map((id) => id.toString())
-        c.phase = 'done'
+        chunk.pieceIds = result.pieceIds.map((id) => id.toString())
+        finishChunk(c, chunk)
         await persist()
         return
       } catch (err) {
         // No hash recorded means the submission itself failed — surface it.
         // With a hash, the transaction is the provider's to land; fall
         // through to the same status waits a resumed run uses.
-        if (c.txHash == null) throw err
+        if (chunk.txHash == null) throw err
       }
     }
     c.phase = 'confirming'
     emit()
     try {
-      if (c.signedDataSetId == null) {
+      if (chunk.signedDataSetId == null) {
         // Create-and-add status URL shape verified against @filoz/synapse-core
         // src/sp/create-dataset-add-pieces.ts; the helper chains the data set
         // leg into the AddPieces leg itself.
         const confirmation = await waitPatiently(() =>
           sp.waitForCreateDataSetAddPieces({
-            statusUrl: new URL(`/pdp/data-sets/created/${c.txHash}`, c.serviceURL).toString(),
+            statusUrl: new URL(`/pdp/data-sets/created/${chunk.txHash}`, c.serviceURL).toString(),
           })
         )
         c.dataSetId = confirmation.dataSetId.toString()
-        c.pieceIds = confirmation.piecesIds.map((id) => id.toString())
+        chunk.pieceIds = confirmation.piecesIds.map((id) => id.toString())
       } else {
         // AddPieces status URL shape verified against @filoz/synapse-core
         // src/sp/add-pieces.ts addPiecesApiRequest (the Location header).
         const confirmation = await waitPatiently(() =>
           sp.waitForAddPieces({
-            statusUrl: new URL(`/pdp/data-sets/${c.signedDataSetId}/pieces/added/${c.txHash}`, c.serviceURL).toString(),
+            statusUrl: new URL(
+              `/pdp/data-sets/${chunk.signedDataSetId}/pieces/added/${chunk.txHash}`,
+              c.serviceURL
+            ).toString(),
           })
         )
-        c.dataSetId = c.signedDataSetId
-        c.pieceIds = confirmation.confirmedPieceIds.map((id) => id.toString())
+        c.dataSetId = chunk.signedDataSetId
+        chunk.pieceIds = confirmation.confirmedPieceIds.map((id) => id.toString())
       }
     } catch (err) {
       if (isTerminalRejection(err)) throw err
@@ -393,15 +485,15 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
       // carries the same guarantee as the three add-status signals
       // (verified: src/pdp-verifier.ts fetchAddPiecesEvent and the
       // @filoz/synapse-core/abis pdp event shapes).
-      if (!(await confirmFromChain(c))) throw err
+      if (!(await confirmFromChain(c, chunk))) throw err
     }
-    c.phase = 'done'
+    finishChunk(c, chunk)
     await persist()
   }
 
-  const confirmFromChain = async (c: SubmitContextStatus): Promise<boolean> => {
-    if (c.txHash == null) return false
-    const receipt = await synapse.client.getTransactionReceipt({ hash: c.txHash }).catch(() => null)
+  const confirmFromChain = async (c: SubmitContextStatus, chunk: SavedChunk): Promise<boolean> => {
+    if (chunk.txHash == null) return false
+    const receipt = await synapse.client.getTransactionReceipt({ hash: chunk.txHash }).catch(() => null)
     if (receipt == null) return false
     if (receipt.status !== 'success') {
       throw new Error('commit transaction reverted on chain')
@@ -412,61 +504,81 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
       .find(
         (ev) =>
           ev.address.toLowerCase() === pdpAddress &&
-          (c.signedDataSetId == null || ev.args.setId === BigInt(c.signedDataSetId))
+          (chunk.signedDataSetId == null || ev.args.setId === BigInt(chunk.signedDataSetId))
       )
     if (event == null) return false
     c.dataSetId = event.args.setId.toString()
-    c.pieceIds = event.args.pieceIds.map((id) => id.toString())
+    chunk.pieceIds = event.args.pieceIds.map((id) => id.toString())
     return true
+  }
+
+  /**
+   * Drive one provider copy through every pending chunk, sequentially:
+   * presign → pull → commit per chunk. Each committed chunk pins the data
+   * set, so later chunks (and any resume) re-bind to it and take the plain
+   * AddPieces path.
+   */
+  const runChunks = async (c: SubmitContextStatus, from: string | ((pieceCid: PieceCID) => string)) => {
+    for (let i = 0; i < c.chunks.length; i++) {
+      const chunk = c.chunks[i]
+      if (chunk.committed === true) continue
+      c.chunkIndex = i
+      if (chunk.txHash != null) {
+        // Submitted before a reload: confirmation needs no live context.
+        await commitChunk(c, chunk, undefined)
+        continue
+      }
+      const ctx = await bindCtx(c)
+      await ensurePresigned(c, chunk, ctx)
+      await pullChunk(c, chunk, ctx, from)
+      await commitChunk(c, chunk, ctx)
+    }
+    c.chunkIndex = undefined
+    c.phase = 'done'
+    await persist()
   }
 
   try {
     const primary = live[0]
     const secondaries = live.slice(1)
-
-    // The primary's bytes must be parked before anything else: secondaries
-    // copy from it, and its own commit needs them present. A primary already
-    // confirming or done has parked bytes by construction.
-    if (primary.phase === 'queued') {
-      const ctx = liveCtx.get(primary.providerId)
-      if (ctx == null) throw new Error('primary storage context unavailable')
-      await ensurePresigned(primary, ctx)
-      await pullTo(primary, ctx, (pieceCid) => {
-        const url = sourceUrlByPiece.get(pieceCid.toString())
-        if (url == null) throw new Error(`no source URL for ${pieceCid.toString()}`)
-        return url
-      })
+    const sourceFor = (pieceCid: PieceCID): string => {
+      const url = sourceUrlByPiece.get(pieceCid.toString())
+      if (url == null) throw new Error(`no source URL for ${pieceCid.toString()}`)
+      return url
     }
 
-    // Primary commit and each secondary's pull→commit only need the parked
-    // primary bytes — run them concurrently, one failure never blocking the
-    // rest (each copy is an independent on-chain data set).
-    const jobs = [
-      (async () => {
-        if (primary.phase !== 'done') await confirmCommit(primary, liveCtx.get(primary.providerId))
-      })(),
-      ...secondaries.map((c) =>
-        (async () => {
-          if (c.phase === 'done') return
-          if (c.txHash != null) {
-            await confirmCommit(c, undefined)
-            return
-          }
-          const ctx = liveCtx.get(c.providerId)
-          if (ctx == null) throw new Error('storage context unavailable')
-          await ensurePresigned(c, ctx)
-          await pullTo(c, ctx, primary.serviceURL)
-          await confirmCommit(c, ctx)
-        })()
-      ),
-    ]
-    const settled = await Promise.allSettled(jobs)
+    // The primary completes first — every chunk pulled (parked bytes the
+    // secondaries copy from) and committed. Its failure still lets resumed
+    // secondaries finish confirmation work below; only fresh secondary pulls
+    // need a healthy primary and fail naturally against it.
+    let primaryError: unknown = null
+    if (primary.phase !== 'done') {
+      try {
+        await runChunks(primary, sourceFor)
+      } catch (err) {
+        if (err instanceof SubmitBlockedError) {
+          // Not a provider failure — the context stays queued and resumable
+          // (a blocked throw always happens before the copy completes).
+          primary.phase = 'queued'
+          await persist()
+          throw err
+        }
+        primary.phase = 'failed'
+        primary.error = err instanceof Error ? err.message : String(err)
+        primaryError = err
+      }
+    }
+
+    // Each secondary copy is an independent on-chain data set — run them
+    // concurrently, one failure never blocking the rest.
+    const settled = await Promise.allSettled(
+      secondaries.map((c) => (c.phase === 'done' ? Promise.resolve() : runChunks(c, primary.serviceURL)))
+    )
     let blocked: SubmitBlockedError | null = null
     settled.forEach((s, i) => {
       if (s.status !== 'rejected') return
-      const c = i === 0 ? primary : secondaries[i - 1]
+      const c = secondaries[i]
       if (s.reason instanceof SubmitBlockedError) {
-        // Not a provider failure — the context stays queued and resumable.
         blocked = s.reason
         if (c.phase !== 'done') c.phase = 'queued'
         return
@@ -477,6 +589,7 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
       }
     })
     await persist()
+    if (primaryError != null) throw primaryError
     if (blocked != null) throw blocked
     return state
   } finally {

@@ -82,20 +82,23 @@ function Led({ on, color }: { on: boolean; color: string }) {
 }
 
 function describeSubmitPhase(c: SubmitContextStatus): string {
+  // Large runs land in several chunks (one provider add each); show which
+  // one is in flight so a long submit reads as progress, not repetition.
+  const chunk = c.chunkIndex != null && c.chunks.length > 1 ? `chunk ${c.chunkIndex + 1}/${c.chunks.length} · ` : ''
   switch (c.phase) {
     case 'queued':
       return 'queued'
     case 'presigning':
-      return 'signing authorization…'
+      return `${chunk}signing authorization…`
     case 'pulling': {
       const statuses = c.pullStatus ? Object.values(c.pullStatus) : []
       const done = statuses.filter((s) => s === 'complete').length
-      return `provider pulling ${done}/${statuses.length}…`
+      return `${chunk}provider pulling ${done}/${statuses.length}…`
     }
     case 'committing':
-      return 'committing on-chain…'
+      return `${chunk}committing on-chain…`
     case 'confirming':
-      return 'confirming…'
+      return `${chunk}confirming…`
     case 'done':
       return 'committed ✓'
     case 'failed':
@@ -899,11 +902,14 @@ export default function App({ caps }: { caps: Capabilities }) {
                         <span className={c.phase === 'done' ? 'ok-text' : 'working'}>{describeSubmitPhase(c)}</span>
                       )}
                       <span className="mono dim">
-                        {c.dataSetId == null
-                          ? c.txHash == null
-                            ? '—'
-                            : short(c.txHash, 10, 4)
-                          : `#${c.dataSetId} · ${c.pieceIds?.length ?? 0} piece${c.pieceIds?.length === 1 ? '' : 's'}`}
+                        {(() => {
+                          const txHash = [...c.chunks].reverse().find((ch) => ch.txHash != null)?.txHash
+                          return c.dataSetId == null
+                            ? txHash == null
+                              ? '—'
+                              : short(txHash, 10, 4)
+                            : `#${c.dataSetId} · ${c.pieceIds?.length ?? 0} piece${c.pieceIds?.length === 1 ? '' : 's'}`
+                        })()}
                       </span>
                     </div>
                   ))}
