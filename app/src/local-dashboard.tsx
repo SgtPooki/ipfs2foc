@@ -31,6 +31,8 @@ interface ServeStatus {
   }>
   failures: Array<{ cid: string; error: string; category?: string }>
   gas: { baseFee: string; multipleOfFloor: number; level: string; pause: boolean } | null
+  // Optional: a server older than the piece-ingress feature omits it.
+  ingress?: { publicBase: string | null; reachable: boolean | null } | null
 }
 
 const POLL_MS = 2000
@@ -122,12 +124,23 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
   const failures = status?.failures ?? []
   const db = status?.dbPath ?? 'migrate.db'
   const net = caps.network === 'calibration' ? ' --network calibration' : ''
-  const commitCmds: Array<[string, string]> = [
-    [`ipfs2foc create-data-set --provider-id <id>${net}`, 'once per provider · skip if reusing a data set'],
-    [`ipfs2foc redirect-serve --db ${db} --ingress cloudflared --port 4322`, 'terminal A · leave running'],
-    [`ipfs2foc pdp-submit --db ${db} --data-set-id <id> --source-base https://<host>${net}`, 'terminal B'],
-    [`ipfs2foc report --db ${db} --data-set-id <id>${net}`, 'confirm on chain'],
-  ]
+  // With public ingress up, this daemon already serves /piece — the hints
+  // skip the separate redirect server and point pdp-submit straight at it.
+  const publicBase = status?.ingress?.publicBase ?? null
+  const reachable = status?.ingress?.reachable ?? null
+  const commitCmds: Array<[string, string]> =
+    publicBase == null
+      ? [
+          [`ipfs2foc create-data-set --provider-id <id>${net}`, 'once per provider · skip if reusing a data set'],
+          [`ipfs2foc redirect-serve --db ${db} --ingress cloudflared --port 4322`, 'terminal A · leave running'],
+          [`ipfs2foc pdp-submit --db ${db} --data-set-id <id> --source-base https://<host>${net}`, 'terminal B'],
+          [`ipfs2foc report --db ${db} --data-set-id <id>${net}`, 'confirm on chain'],
+        ]
+      : [
+          [`ipfs2foc create-data-set --provider-id <id>${net}`, 'once per provider · skip if reusing a data set'],
+          [`ipfs2foc pdp-submit --db ${db} --data-set-id <id> --source-base ${publicBase}${net}`, 'second terminal'],
+          [`ipfs2foc report --db ${db} --data-set-id <id>${net}`, 'confirm on chain'],
+        ]
 
   return (
     <div className="shell" style={stale ? { opacity: 0.6 } : undefined}>
@@ -140,6 +153,22 @@ export default function LocalDashboard({ caps }: { caps: Capabilities }) {
         <div className="net-badge">
           <span className={`chip ${stale ? 'chip-warn' : 'chip-ok'}`}>{stale ? 'reconnecting…' : state}</span>
           <span className="chip">{caps.network}</span>
+          {publicBase == null ? (
+            <span
+              className="chip"
+              title="providers cannot pull yet — restart with --ingress cloudflared or --public-base"
+            >
+              pieces · local only
+            </span>
+          ) : (
+            <span
+              className={`chip ${reachable == null ? '' : reachable ? 'chip-ok' : 'chip-warn'}`}
+              title={`providers pull from ${publicBase}/piece/{pieceCid}`}
+            >
+              pieces · {publicBase.replace(/^https:\/\//, '')}
+              {reachable == null ? ' · checking' : reachable ? '' : ' · unreachable'}
+            </span>
+          )}
           <span
             className="chip"
             title={
