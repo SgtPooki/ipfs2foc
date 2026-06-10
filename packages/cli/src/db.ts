@@ -216,6 +216,16 @@ export class MigrationDB {
         error         TEXT,
         FOREIGN KEY (aggregate_idx) REFERENCES aggregates(idx)
       );
+      CREATE TABLE IF NOT EXISTS session_keys (
+        id              INTEGER PRIMARY KEY CHECK (id = 1),
+        chain_id        INTEGER NOT NULL,
+        root_address    TEXT NOT NULL,
+        session_address TEXT NOT NULL,
+        private_key     TEXT NOT NULL,
+        expires_at      INTEGER NOT NULL,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+      );
     `)
   }
 
@@ -950,9 +960,73 @@ export class MigrationDB {
       .filter((p): p is string => p != null && p !== '')
   }
 
+  /**
+   * Persist the browser-granted session key (single active session per DB).
+   * The key signs only FWSS CreateDataSet/AddPieces typed-data, is time-boxed
+   * on chain, and is revocable from the browser — but it is still key
+   * material: it must never appear in logs, error strings, or API responses.
+   */
+  saveSessionKey(row: {
+    chainId: number
+    rootAddress: string
+    sessionAddress: string
+    privateKey: string
+    expiresAt: number
+  }): void {
+    const now = new Date().toISOString()
+    this.#db
+      .prepare(
+        `INSERT INTO session_keys (id, chain_id, root_address, session_address, private_key, expires_at, created_at, updated_at)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           chain_id = excluded.chain_id,
+           root_address = excluded.root_address,
+           session_address = excluded.session_address,
+           private_key = excluded.private_key,
+           expires_at = excluded.expires_at,
+           updated_at = excluded.updated_at`
+      )
+      .run(row.chainId, row.rootAddress, row.sessionAddress, row.privateKey, row.expiresAt, now, now)
+  }
+
+  loadSessionKey(): SessionKeyRow | null {
+    const row = this.#db
+      .prepare(`SELECT chain_id, root_address, session_address, private_key, expires_at FROM session_keys WHERE id = 1`)
+      .get() as Record<string, unknown> | undefined
+    if (row == null) return null
+    return {
+      chainId: Number(row.chain_id),
+      rootAddress: String(row.root_address),
+      sessionAddress: String(row.session_address),
+      privateKey: String(row.private_key),
+      expiresAt: Number(row.expires_at),
+    }
+  }
+
+  /** Refresh only the cached expiry (the chain re-read path during a long run). */
+  updateSessionExpiry(expiresAt: number): void {
+    this.#db
+      .prepare(`UPDATE session_keys SET expires_at = ?, updated_at = ? WHERE id = 1`)
+      .run(expiresAt, new Date().toISOString())
+  }
+
+  deleteSessionKey(): void {
+    this.#db.prepare(`DELETE FROM session_keys WHERE id = 1`).run()
+  }
+
   close(): void {
     this.#db.close()
   }
+}
+
+export interface SessionKeyRow {
+  chainId: number
+  rootAddress: string
+  sessionAddress: string
+  /** Raw secp256k1 key. Handle with care: never log or serialize. */
+  privateKey: string
+  /** Unix seconds; chain-effective min of the two permission expiries. */
+  expiresAt: number
 }
 
 function toPieceRow(r: unknown): PieceRow {
