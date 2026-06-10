@@ -12,7 +12,12 @@
  */
 
 import * as Piece from '@web3-storage/data-segment/piece'
-import { Padded } from '@web3-storage/data-segment/piece/size'
+// Naming trap: data-segment's `Padded` is the fr32 payload size (127/128 of
+// the power of two — what Filecoin calls UNPADDED), while `Expanded` is the
+// power-of-two piece size Curio's floor is expressed in. Using Padded here
+// under-reports every piece by 128/127 and wrongly rejects pieces that sit
+// exactly at the provider minimum.
+import { Expanded } from '@web3-storage/data-segment/piece/size'
 
 export interface MinPieceCheckMember {
   pieceCid: string
@@ -33,7 +38,7 @@ export function checkMinPieceSize(members: MinPieceCheckMember[], minPieceSize: 
   const tooSmall: Array<{ pieceCid: string; paddedSize: bigint }> = []
   for (const m of members) {
     const piece = Piece.fromString(m.pieceCid)
-    const paddedSize = Padded.fromHeight(piece.height)
+    const paddedSize = Expanded.fromHeight(piece.height)
     if (paddedSize < minPieceSize) {
       tooSmall.push({ pieceCid: m.pieceCid, paddedSize })
     }
