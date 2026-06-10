@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/SgtPooki/ipfs2foc/compare/ipfs2foc-v0.2.0...ipfs2foc-v0.3.0) (2026-06-10)
+
+
+### Features
+
+* serve capabilities and the app from disk ([c9ac956](https://github.com/SgtPooki/ipfs2foc/commit/c9ac95680829dd5450514d537840a3651b268016))
+* serve pieces from the serve daemon ([f23be37](https://github.com/SgtPooki/ipfs2foc/commit/f23be374cd22f1b48d79617d9addb8a9084550a5))
+* serve submits with a session key ([ff1cff4](https://github.com/SgtPooki/ipfs2foc/commit/ff1cff49a8337396ee4bd115c4f838ac45413d9c))
+* session key intake for serve ([91a68f3](https://github.com/SgtPooki/ipfs2foc/commit/91a68f3452e9ffe6aec4063420b28a3f525d3744))
+
+
+### Bug Fixes
+
+* min piece guard compared the wrong unit ([15fdc50](https://github.com/SgtPooki/ipfs2foc/commit/15fdc5012da11ceae76efb3cc04db3abc62bc831))
+
 ## [0.2.0](https://github.com/SgtPooki/ipfs2foc/compare/ipfs2foc-v0.1.0...ipfs2foc-v0.2.0) (2026-06-09)
 
 
