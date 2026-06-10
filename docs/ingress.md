@@ -58,6 +58,20 @@ and explicitly does not guarantee uptime
 Fine for one-shot CLI migrations. For a long-lived ingress, run a named
 tunnel (needs a Cloudflare account) or use Funnel below.
 
+### If the tunnel URL serves Cloudflare error 1033
+
+cloudflared prints its URL before the tunnel registers with the edge over
+QUIC (UDP port 7844). On networks that block that port, the URL resolves but
+every request returns Cloudflare error 1033 ("unable to resolve" the tunnel)
+— `serve`'s reachability probe reports the piece endpoint unreachable.
+Force the TCP transport and front the port yourself:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:4321 --no-autoupdate --protocol http2
+# then point serve at the printed URL:
+ipfs2foc serve --public-base https://<words>.trycloudflare.com
+```
+
 ## Tailscale Funnel (`--ingress funnel`)
 
 Funnel publishes a Tailscale node on a `*.ts.net` hostname with a free TLS
