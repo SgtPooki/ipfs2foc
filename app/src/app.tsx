@@ -280,7 +280,7 @@ export default function App({ caps }: { caps: Capabilities }) {
   }, [wallet, onCalibration, results])
 
   const submitWith = useCallback(
-    async (excludePieceCids: string[] | null) => {
+    async (excludePieceCids: string[] | null, ignoreMinPieceSize = false) => {
       if (wallet == null || session == null || results.length === 0) return
       const pieces = excludePieceCids == null ? results : results.filter((r) => !excludePieceCids.includes(r.pieceCid))
       if (pieces.length === 0) return
@@ -296,6 +296,7 @@ export default function App({ caps }: { caps: Capabilities }) {
           pieces,
           copies: prior?.copies ?? copies,
           prior,
+          ignoreMinPieceSize,
           onUpdate: setSubmitState,
         })
         setResumable(await findResumableSubmit(wallet, TARGET_NETWORK, pieces))
@@ -314,9 +315,12 @@ export default function App({ caps }: { caps: Capabilities }) {
   )
 
   const submit = useCallback(() => void submitWith(null), [submitWith])
-  // The recovery offer after a too-small block: submit only the items the
-  // provider accepts; the remainder continues through the local path.
+  // The recovery offers after a too-small block: submit only the items the
+  // advertised floor accepts, or submit everything anyway — no enforcement of
+  // the floor has been found in the provider's pull path, so the provider is
+  // the judge and a real rejection shows in the per-piece pull status.
   const submitEligible = useCallback(() => void submitWith(tooSmallCids), [submitWith, tooSmallCids])
+  const submitAllAnyway = useCallback(() => void submitWith(null, true), [submitWith])
 
   const discardSubmit = useCallback(() => {
     void clearSubmit()
@@ -919,14 +923,21 @@ export default function App({ caps }: { caps: Capabilities }) {
                     provider accepts — still signed by your wallet, no exported key. Two-part plan:
                   </p>
                   <div className="actions">
+                    <button className="btn small" onClick={submitAllAnyway} type="button">
+                      Submit all anyway
+                    </button>
                     {eligibleCount > 0 && (
                       <button className="btn small" onClick={submitEligible} type="button">
-                        Submit the {eligibleCount} item{eligibleCount === 1 ? '' : 's'} above the minimum now
+                        Submit the {eligibleCount} item{eligibleCount === 1 ? '' : 's'} above the minimum
                       </button>
                     )}
                     <button className="btn small" onClick={saveRemainderManifest} type="button">
                       Download manifest of the {tooSmallCids.length} small item{tooSmallCids.length === 1 ? '' : 's'}
                     </button>
+                    <span className="hint">
+                      the minimum is the provider's advertised value — small pieces may still be accepted, and a real
+                      refusal shows per piece in the pull status
+                    </span>
                   </div>
                   <p>
                     Then, with that manifest and{' '}

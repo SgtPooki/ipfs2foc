@@ -77,6 +77,13 @@ export interface SubmitOptions {
   pieces: PieceResult[]
   /** Provider copies to store (primary + secondaries). Ignored when resuming. */
   copies: number
+  /**
+   * Skip the advertised min-piece-size pre-check. The registry value appears
+   * to be advisory (no enforcement found in the provider's pull path); with
+   * this set the provider itself is the judge and a real rejection surfaces
+   * in the per-piece pull status.
+   */
+  ignoreMinPieceSize?: boolean
   /** Resume record from findResumableSubmit(); null starts a fresh run. */
   prior: SavedSubmit | null
   onUpdate: (state: SubmitState) => void
@@ -235,6 +242,7 @@ export async function runSubmit(opts: SubmitOptions): Promise<SubmitState> {
   // against every provider with outstanding work BEFORE the first signature
   // so a too-small piece can never strand a half-signed run.
   for (const c of live) {
+    if (opts.ignoreMinPieceSize === true) break
     const ctx = liveCtx.get(c.providerId)
     if (ctx == null || c.phase !== 'queued') continue
     const check = guard.checkMinPieceSize(
