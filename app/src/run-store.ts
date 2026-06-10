@@ -103,9 +103,24 @@ interface LegacySavedSubmit {
   }>
 }
 
-/** A legacy record is exactly a one-chunk run: carry its state over intact. */
+/** Chunk size for re-planned legacy records; keep equal to submit.ts PULL_CHUNK_SIZE. */
+export const PULL_CHUNK_SIZE = 32
+
+/**
+ * A legacy record was a one-shot run. With a txHash the submission is the
+ * provider's to land — carry it over as a single confirmation-only chunk.
+ * Without one, nothing was submitted: discard the whole-run presign (it can
+ * exceed the provider's per-pull cap) and re-plan into proper chunks.
+ */
 function migrateLegacySubmit(old: LegacySavedSubmit): SavedSubmit | null {
   if (!Array.isArray(old.contexts) || !Array.isArray(old.pieceCids)) return null
+  const replanned = (): SavedChunk[] => {
+    const chunks: SavedChunk[] = []
+    for (let i = 0; i < old.pieceCids.length; i += PULL_CHUNK_SIZE) {
+      chunks.push({ pieceCids: old.pieceCids.slice(i, i + PULL_CHUNK_SIZE) })
+    }
+    return chunks
+  }
   return {
     version: 2,
     root: old.root,
@@ -121,17 +136,20 @@ function migrateLegacySubmit(old: LegacySavedSubmit): SavedSubmit | null {
       dataSetId: c.dataSetId,
       pieceIds: c.pieceIds,
       error: c.error,
-      chunks: [
-        {
-          pieceCids: old.pieceCids,
-          extraData: c.extraData,
-          signedDataSetId: c.signedDataSetId,
-          pullComplete: c.pullComplete,
-          txHash: c.txHash,
-          pieceIds: c.pieceIds,
-          committed: c.dataSetId != null && c.pieceIds != null,
-        },
-      ],
+      chunks:
+        c.txHash == null
+          ? replanned()
+          : [
+              {
+                pieceCids: old.pieceCids,
+                extraData: c.extraData,
+                signedDataSetId: c.signedDataSetId,
+                pullComplete: c.pullComplete,
+                txHash: c.txHash,
+                pieceIds: c.pieceIds,
+                committed: c.dataSetId != null && c.pieceIds != null,
+              },
+            ],
     })),
   }
 }

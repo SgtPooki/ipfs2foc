@@ -33,18 +33,24 @@
 //   reverted AddPieces call).
 import type { PieceCID } from '@filoz/synapse-core/piece'
 import type { PieceResult } from './commp.ts'
-import { loadSubmit, type SavedChunk, type SavedSubmit, type SavedSubmitContext, saveSubmit } from './run-store.ts'
+import {
+  loadSubmit,
+  PULL_CHUNK_SIZE,
+  type SavedChunk,
+  type SavedSubmit,
+  type SavedSubmitContext,
+  saveSubmit,
+} from './run-store.ts'
 import { type SessionState, sessionCanPresign, walletChainClient } from './session.ts'
 import { NETWORKS, type NetworkKey, type WalletState } from './wallet.ts'
 
-/**
- * Max pieces per pull request / per on-chain add. Provider pull admission
- * caps the count (observed: a provider refusing 73 with "maximum allowed per
- * pull (40)"); the cap is not advertised in the SP registry, so this mirrors
- * the CLI's `--pull-batch` default, which also respects the 8192-byte FVM
- * event cap on the simulated AddPieces.
- */
-export const PULL_CHUNK_SIZE = 32
+// Max pieces per pull request / per on-chain add. Provider pull admission
+// caps the count (observed: a provider refusing 73 with "maximum allowed per
+// pull (40)"); the cap is not advertised in the SP registry, so this mirrors
+// the CLI's `--pull-batch` default, which also respects the 8192-byte FVM
+// event cap on the simulated AddPieces. Defined in run-store.ts so legacy
+// record migration re-plans with the same size.
+export { PULL_CHUNK_SIZE } from './run-store.ts'
 
 export type SubmitPhase = 'queued' | 'presigning' | 'pulling' | 'committing' | 'confirming' | 'done' | 'failed'
 
