@@ -30,11 +30,31 @@ import type { MigrationDB } from './db.ts'
 import { type BaseFeeReading, classifyBaseFee, getBaseFee } from './gas.ts'
 import { handlePieceRequest, PIECE_PATH } from './redirect-server.ts'
 import type { Runner } from './runner.ts'
+import {
+  CHAIN_IDS,
+  type ChainJob,
+  createDataSetWithSession,
+  PRESIGN_SAFETY_MARGIN_SECONDS,
+  type SessionValidator,
+  sessionAddressOf,
+  sessionSubmitDeps,
+  validateSessionOnChain,
+} from './session-submit.ts'
+import { runSubmitPdp } from './submit-pdp.ts'
 import { log, parseCidList } from './util.ts'
 
 export interface GasConfig {
   rpcUrl: string
   maxBaseFee: bigint
+}
+
+/** Chain-touching config for browser-signed submission (#25 Slice D). */
+export interface SubmitConfig {
+  rpcUrl: string
+  maxBaseFee: bigint
+  maxInFlight?: number
+  pullBatch?: number
+  pollMs?: number
 }
 
 /**
@@ -59,6 +79,12 @@ export interface ServeOptions {
   appDir?: string
   ingress?: IngressState
   gas?: GasConfig
+  /** Enables /api/session + /api/submit + /api/data-sets (needs an RPC). */
+  submit?: SubmitConfig
+  /** Test seams. */
+  sessionValidator?: SessionValidator
+  submitDriver?: typeof runSubmitPdp
+  probe?: (base: string) => Promise<boolean>
 }
 
 /**
@@ -110,10 +136,85 @@ function isLocalOrigin(origin: string): boolean {
   }
 }
 
+/**
+ * Self-probe the public ingress: GET {base}/healthz and require the body to
+ * be this server's own "ok" (a tunnel edge error page can answer 200 to a
+ * bare status check). Retries cover a cold tunnel.
+ */
+export async function probePublicBase(base: string, attempts = 3): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(10_000), redirect: 'manual' })
+      if (res.ok && (await res.text()) === 'ok') return true
+    } catch {
+      // retry below
+    }
+    if (i < attempts - 1) await new Promise((resolveSleep) => setTimeout(resolveSleep, 2_000 * (i + 1)))
+  }
+  return false
+}
+
 export async function startServer(opts: ServeOptions): Promise<Server> {
-  const { db, runner, port, network, gas } = opts
+  const { db, runner, port, network, gas, submit } = opts
   const appDir = resolve(opts.appDir ?? defaultAppDir())
   const ingress: IngressState = opts.ingress ?? { publicBase: null, reachable: null }
+  const sessionValidator = opts.sessionValidator ?? validateSessionOnChain
+  const submitDriver = opts.submitDriver ?? runSubmitPdp
+  const probe = opts.probe ?? probePublicBase
+
+  // The single in-flight chain job (submit or data-set creation). One slot:
+  // both kinds consume the session key and the aggregate lifecycle.
+  let job: ChainJob | null = null
+
+  const sessionInfo = (): unknown => {
+    const row = db.loadSessionKey()
+    if (row == null) return { present: false }
+    const now = Math.floor(Date.now() / 1000)
+    return {
+      present: true,
+      sessionAddress: row.sessionAddress,
+      root: row.rootAddress,
+      chainId: row.chainId,
+      expiresAt: row.expiresAt,
+      valid: row.expiresAt > now,
+      canPresign: BigInt(row.expiresAt) - BigInt(now) > PRESIGN_SAFETY_MARGIN_SECONDS,
+    }
+  }
+
+  const jobInfo = (): unknown =>
+    job == null
+      ? null
+      : {
+          running: job.running,
+          kind: job.kind,
+          dataSetId: job.dataSetId,
+          startedAt: job.startedAt,
+          finishedAt: job.finishedAt,
+          lastError: job.lastError,
+          lastResult: job.lastResult,
+        }
+
+  const startJob = (kind: ChainJob['kind'], dataSetId: number | null, work: () => Promise<void>): void => {
+    const next: ChainJob = {
+      kind,
+      dataSetId,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      running: true,
+      lastError: null,
+      lastResult: job?.lastResult ?? null,
+    }
+    job = next
+    void work()
+      .catch((err) => {
+        next.lastError = err instanceof Error ? err.message : String(err)
+        log(`${kind} failed: ${next.lastError}`)
+      })
+      .finally(() => {
+        next.running = false
+        next.finishedAt = new Date().toISOString()
+      })
+  }
 
   // Poll the network base fee in the background so the console can show it and
   // flag when submission should pause. Read-only; never blocks the commP loop.
@@ -149,9 +250,9 @@ export async function startServer(opts: ServeOptions): Promise<Server> {
     pieceBase: ingress.publicBase,
     supportsAssembledPieces: true,
     supportsServerCommp: true,
-    // Browser signing arrives with the local BYOW flow; until then the console
-    // is a control plane over the commP/packing/serving stages.
-    supportsBrowserSigning: false,
+    // The browser wallet grants a scoped session key and hands it over; this
+    // daemon signs presigns and drives pull/add itself (#25 Slice D).
+    supportsBrowserSigning: submit != null,
     // Provider pulls hit {pieceBase}/piece/{pcid}; a null pieceBase means the
     // ingress requirement is not satisfied yet.
     requiresPublicIngress: true,
@@ -187,7 +288,8 @@ export async function startServer(opts: ServeOptions): Promise<Server> {
             json(403, { error: 'forbidden: API is loopback-only' })
             return
           }
-          if (req.method === 'POST' && req.headers.origin != null && !isLocalOrigin(req.headers.origin)) {
+          const mutating = req.method !== 'GET' && req.method !== 'HEAD'
+          if (mutating && req.headers.origin != null && !isLocalOrigin(req.headers.origin)) {
             json(403, { error: `forbidden: cross-origin request from ${req.headers.origin}` })
             return
           }
@@ -203,8 +305,207 @@ export async function startServer(opts: ServeOptions): Promise<Server> {
               ...(status(db, runner) as object),
               gas: gasStatus(),
               ingress: { publicBase: ingress.publicBase, reachable: ingress.reachable },
+              session: sessionInfo(),
+              submit: jobInfo(),
             })
             return
+
+          case 'GET /api/session':
+            json(200, sessionInfo())
+            return
+
+          case 'DELETE /api/session':
+            // Forget this daemon's copy only; on-chain revoke happens in the
+            // browser, which still holds its own copy of the key.
+            db.deleteSessionKey()
+            json(200, { deleted: true })
+            return
+
+          case 'POST /api/session': {
+            if (submit == null) {
+              json(503, { error: 'signing is not configured on this daemon (no RPC); restart serve' })
+              return
+            }
+            // Parse defensively: a JSON.parse SyntaxError can quote the body,
+            // and this body carries key material — never echo it.
+            let body: Record<string, unknown>
+            try {
+              body = JSON.parse(await readBody()) as Record<string, unknown>
+            } catch {
+              json(400, { error: 'invalid JSON body' })
+              return
+            }
+            const key = body.sessionPrivateKey
+            if (typeof key !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
+              json(400, { error: 'sessionPrivateKey must be 0x + 64 hex chars' })
+              return
+            }
+            const root = body.root
+            if (typeof root !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(root)) {
+              json(400, { error: 'root must be a 0x wallet address' })
+              return
+            }
+            const chainId = Number(body.chainId)
+            if (chainId !== CHAIN_IDS[network]) {
+              json(409, {
+                reason: 'network-mismatch',
+                error: `this daemon runs ${network} (chain ${CHAIN_IDS[network]}); the session targets chain ${chainId}`,
+              })
+              return
+            }
+            const sessionAddress = sessionAddressOf(key)
+            let expiresAt: bigint
+            try {
+              expiresAt = await sessionValidator(submit.rpcUrl, network, { root, sessionAddress })
+            } catch (err) {
+              json(502, { error: `chain read failed: ${err instanceof Error ? err.message : String(err)}` })
+              return
+            }
+            if (expiresAt <= BigInt(Math.floor(Date.now() / 1000))) {
+              json(422, {
+                reason: expiresAt === 0n ? 'not-authorized' : 'expired',
+                error:
+                  expiresAt === 0n
+                    ? `no on-chain grant found for session ${sessionAddress} from ${root}`
+                    : `the on-chain grant for session ${sessionAddress} has expired`,
+              })
+              return
+            }
+            // Persist BEFORE answering: a browser reload right after the 200
+            // must find the daemon already holding the session.
+            db.saveSessionKey({
+              chainId,
+              rootAddress: root,
+              sessionAddress,
+              privateKey: key,
+              expiresAt: Number(expiresAt),
+            })
+            log(
+              `session key accepted: ${sessionAddress} (root ${root}, expires ${new Date(Number(expiresAt) * 1000).toISOString()})`
+            )
+            json(200, { sessionAddress, root, expiresAt: Number(expiresAt), valid: true })
+            return
+          }
+
+          case 'POST /api/data-sets': {
+            if (submit == null) {
+              json(503, { error: 'signing is not configured on this daemon (no RPC); restart serve' })
+              return
+            }
+            if (job?.running === true) {
+              json(409, { reason: 'job-running', error: `a ${job.kind} job is already in progress` })
+              return
+            }
+            const row = db.loadSessionKey()
+            if (row == null) {
+              json(409, { reason: 'no-session', error: 'no signing session — grant one in the console first' })
+              return
+            }
+            if (BigInt(row.expiresAt) - BigInt(Math.floor(Date.now() / 1000)) <= PRESIGN_SAFETY_MARGIN_SECONDS) {
+              json(409, {
+                reason: 'session-margin',
+                error: 'session expires inside the presign margin — extend it first',
+              })
+              return
+            }
+            let body: Record<string, unknown>
+            try {
+              body = JSON.parse(await readBody()) as Record<string, unknown>
+            } catch {
+              json(400, { error: 'invalid JSON body' })
+              return
+            }
+            const providerId = Number(body.providerId)
+            if (!Number.isInteger(providerId) || providerId <= 0) {
+              json(400, { error: 'providerId must be a positive integer' })
+              return
+            }
+            startJob('create-data-set', null, async () => {
+              const result = await createDataSetWithSession(row, {
+                network,
+                rpcUrl: submit.rpcUrl,
+                providerId: BigInt(providerId),
+                cdn: body.cdn === true,
+              })
+              if (job != null) {
+                job.dataSetId = result.dataSetId
+                job.lastResult = { dataSetId: result.dataSetId, txHash: result.txHash }
+              }
+            })
+            json(202, { state: 'running', kind: 'create-data-set' })
+            return
+          }
+
+          case 'POST /api/submit': {
+            if (submit == null) {
+              json(503, { error: 'signing is not configured on this daemon (no RPC); restart serve' })
+              return
+            }
+            if (job?.running === true) {
+              json(409, { reason: 'job-running', error: `a ${job.kind} job is already in progress` })
+              return
+            }
+            const row = db.loadSessionKey()
+            if (row == null) {
+              json(409, { reason: 'no-session', error: 'no signing session — grant one in the console first' })
+              return
+            }
+            if (BigInt(row.expiresAt) - BigInt(Math.floor(Date.now() / 1000)) <= PRESIGN_SAFETY_MARGIN_SECONDS) {
+              json(409, {
+                reason: 'session-margin',
+                error: 'session expires inside the presign margin — extend it first',
+              })
+              return
+            }
+            let body: Record<string, unknown>
+            try {
+              body = JSON.parse(await readBody()) as Record<string, unknown>
+            } catch {
+              json(400, { error: 'invalid JSON body' })
+              return
+            }
+            const dataSetId = Number(body.dataSetId)
+            if (!Number.isInteger(dataSetId) || dataSetId <= 0) {
+              json(400, { error: 'dataSetId must be a positive integer' })
+              return
+            }
+            // Ingress is the #1 failure mode: a provider pull against an
+            // unreachable /piece fails silently. Probe fresh, not cached.
+            if (ingress.publicBase == null) {
+              json(409, {
+                reason: 'ingress-unreachable',
+                error: 'no public ingress — restart serve with --ingress cloudflared or --public-base',
+              })
+              return
+            }
+            const sourceBase = ingress.publicBase
+            ingress.reachable = await probe(sourceBase)
+            if (!ingress.reachable) {
+              json(409, {
+                reason: 'ingress-unreachable',
+                error: `${sourceBase}/healthz is not answering — providers cannot pull; check the tunnel`,
+              })
+              return
+            }
+            startJob('submit', dataSetId, () =>
+              submitDriver(
+                db,
+                {
+                  network,
+                  rpcUrl: submit.rpcUrl,
+                  dataSetId,
+                  sourceBase,
+                  maxInFlight: submit.maxInFlight ?? 4,
+                  maxBaseFee: submit.maxBaseFee,
+                  pollMs: submit.pollMs ?? 15_000,
+                  pullBatch: submit.pullBatch ?? 32,
+                },
+                sessionSubmitDeps(db, row, sessionValidator)
+              )
+            )
+            json(202, { state: 'running', dataSetId })
+            return
+          }
 
           case 'POST /api/start':
             runner.start()

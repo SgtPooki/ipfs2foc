@@ -50,7 +50,9 @@ async function evictCachedCars(db: MigrationDB, aggregateIdx: number): Promise<v
 }
 
 export interface SubmitPdpOptions {
-  privateKey: Hex
+  /** Headless signing key. Optional: the serve daemon signs with a
+   *  browser-granted session key via injected deps instead. */
+  privateKey?: Hex
   network: 'calibration' | 'mainnet'
   rpcUrl?: string
   dataSetId: number
@@ -175,6 +177,9 @@ export interface SubmitDeps {
 
 export const defaultSubmitDeps: SubmitDeps = {
   async setup(opts, rpcUrl) {
+    if (opts.privateKey == null) {
+      throw new Error('PRIVATE_KEY signing requested but no key given (session-key runs inject their own deps)')
+    }
     const chain = opts.network === 'mainnet' ? mainnet : calibration
     const account = privateKeyToAccount(opts.privateKey)
     const synapse = await Synapse.create({ account, transport: http(rpcUrl), chain, source: null })

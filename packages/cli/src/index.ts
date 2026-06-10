@@ -43,7 +43,7 @@ import { startRedirectServer } from './redirect-server.ts'
 import { startCloudflaredTunnel } from './redirect-server-cloudflared.ts'
 import { bigintJsonReplacer, runReport } from './report.ts'
 import { Runner } from './runner.ts'
-import { type IngressState, startServer } from './server.ts'
+import { type IngressState, probePublicBase, startServer } from './server.ts'
 import { runSubmitPdp } from './submit-pdp.ts'
 import { log, parseCidList, parsePositiveInt, parseSize } from './util.ts'
 
@@ -854,6 +854,12 @@ async function cmdServe(argv: string[]): Promise<void> {
     appDir: (values['app-dir'] as string | undefined) ?? process.env.IPFS2FOC_APP_DIR,
     ingress,
     gas,
+    // Browser-signed submission needs an RPC even when the opt-in gas monitor
+    // is off; resolveRpcUrl falls back to the network default.
+    submit: {
+      rpcUrl: resolveRpcUrl({ rpcUrl: values['rpc-url'], network }),
+      maxBaseFee: values['max-base-fee'] == null ? DEFAULT_MAX_BASE_FEE : BigInt(values['max-base-fee']),
+    },
   })
   // Server keeps the process alive; the runner starts via the console/API.
   log(`Loaded ${db.counts().pending} pending CID(s). Press Start in the console (or POST /api/start).`)
@@ -916,24 +922,6 @@ function parsePublicBase(raw: string): string {
     throw new Error(`--public-base must be https (providers reject plain http pull sources)`)
   }
   return raw.replace(/\/+$/, '')
-}
-
-/**
- * Self-probe the public ingress: GET {base}/healthz and require the body to
- * be this server's own "ok" (a tunnel edge error page can answer 200 to a
- * bare status check). Retries cover a cold tunnel.
- */
-async function probePublicBase(base: string, attempts = 3): Promise<boolean> {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const res = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(10_000), redirect: 'manual' })
-      if (res.ok && (await res.text()) === 'ok') return true
-    } catch {
-      // retry below
-    }
-    if (i < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 2_000 * (i + 1)))
-  }
-  return false
 }
 
 async function main(): Promise<void> {
