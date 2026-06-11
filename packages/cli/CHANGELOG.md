@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/SgtPooki/ipfs2foc/compare/ipfs2foc-v0.4.0...ipfs2foc-v0.5.0) (2026-06-11)
+
+
+### Features
+
+* console accepts a cids.txt file ([7079e40](https://github.com/SgtPooki/ipfs2foc/commit/7079e409af83071a3ce5174acc75372b5794d633))
+* relay redirect mode for free-tier hosts ([456757d](https://github.com/SgtPooki/ipfs2foc/commit/456757d3406e4d41e398cb41d1d98090884f36f8))
+
 ## [0.4.0](https://github.com/SgtPooki/ipfs2foc/compare/ipfs2foc-v0.3.0...ipfs2foc-v0.4.0) (2026-06-11)
 
 
