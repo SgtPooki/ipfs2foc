@@ -49,6 +49,14 @@ const CONCURRENCY = HASH_POOL_SIZE
 // Don't re-render on every stream chunk — that starves the thread doing the
 // hashing. Emit progress at most this often.
 const PROGRESS_THROTTLE_MS = 250
+// A working row that has not advanced its byte counter for this long is
+// stalled and gets aborted with a retryable error (#43). A healthy stream
+// ticks continuously; even a cold gateway warming a block through retries
+// produces a byte well inside this window. The CLI's provider-pull watchdog
+// (PULL_STALL_TIMEOUT_MS, 15 min) guards whole-piece pulls; this guards a
+// per-chunk stream, so it can be much tighter.
+const STALL_TIMEOUT_MS = 120_000
+const STALL_POLL_MS = 5_000
 
 interface Row {
   cid: string
@@ -428,6 +436,10 @@ export default function App({ caps }: { caps: Capabilities }) {
     }
   }, [])
 
+  // Live AbortControllers by CID — the stall watchdog and the per-row cancel
+  // button abort through these (#43).
+  const prepareControllers = useRef(new Map<string, AbortController>())
+
   // Compute one CID's piece and patch its row through the phases. Shared by
   // the Prepare worker pool and the per-row Retry action (#34).
   const prepareOne = useCallback(
@@ -436,24 +448,54 @@ export default function App({ caps }: { caps: Capabilities }) {
       let lastEmit = 0
       const patch = (state: RowState) => setRows((prev) => prev.map((r) => (r.cid === cid ? { ...r, state } : r)))
       patch({ phase: 'working', bytes: 0, rate: 0 })
+      const controller = new AbortController()
+      prepareControllers.current.set(cid, controller)
+      // Every progress callback means the byte counter advanced (the exporter
+      // reports cumulative size per chunk). No advance for the stall window →
+      // abort with a retryable error and free the worker slot.
+      let lastAdvanceAt = performance.now()
+      const watchdog = setInterval(() => {
+        if (performance.now() - lastAdvanceAt > STALL_TIMEOUT_MS) {
+          controller.abort(
+            new Error(
+              `the source stopped sending bytes (${Math.round(STALL_TIMEOUT_MS / 1000)}s without progress) — ` +
+                'the network is not serving this CID right now; retry later or check availability'
+            )
+          )
+        }
+      }, STALL_POLL_MS)
       try {
-        const result = await computePiece(gateway, cid, relayBase, (bytes) => {
-          const now = performance.now()
-          if (now - lastEmit < PROGRESS_THROTTLE_MS) return
-          lastEmit = now
-          const secs = (now - startedAt) / 1000
-          patch({ phase: 'working', bytes, rate: secs > 0 ? bytes / 1048576 / secs : 0 })
-        })
+        const result = await computePiece(
+          gateway,
+          cid,
+          relayBase,
+          (bytes) => {
+            const now = performance.now()
+            lastAdvanceAt = now
+            if (now - lastEmit < PROGRESS_THROTTLE_MS) return
+            lastEmit = now
+            const secs = (now - startedAt) / 1000
+            patch({ phase: 'working', bytes, rate: secs > 0 ? bytes / 1048576 / secs : 0 })
+          },
+          controller.signal
+        )
         patch({ phase: 'done', result })
         savedResults.current[cid] = result
         persist(cidsText)
       } catch (err) {
         const failure = describePrepareFailure(err)
         patch({ phase: 'error', message: failure.headline, detail: failure.detail })
+      } finally {
+        clearInterval(watchdog)
+        prepareControllers.current.delete(cid)
       }
     },
     [cidsText, gateway, relayBase, persist]
   )
+
+  const cancelOne = useCallback((cid: string) => {
+    prepareControllers.current.get(cid)?.abort(new Error('cancelled — retry whenever'))
+  }, [])
 
   const run = useCallback(async () => {
     ranRef.current = true
@@ -889,6 +931,10 @@ export default function App({ caps }: { caps: Capabilities }) {
                     <button className="copy" disabled={running} onClick={() => void prepareOne(r.cid)} type="button">
                       retry
                     </button>
+                  ) : r.state.phase === 'working' ? (
+                    <button className="copy" onClick={() => cancelOne(r.cid)} type="button">
+                      cancel
+                    </button>
                   ) : (
                     <span className="dim">—</span>
                   )}
@@ -911,7 +957,8 @@ export default function App({ caps }: { caps: Capabilities }) {
           {running && (
             <p className="gate-note">
               reloading is safe at any point: finished rows are restored from this browser and Prepare resumes the rest.
-              items stuck at a few KiB usually mean the source network is struggling to serve that CID.
+              a row that stops receiving bytes for {Math.round(STALL_TIMEOUT_MS / 60000)} minutes fails on its own and
+              frees the worker; cancel does the same immediately.
             </p>
           )}
           {results.length > 0 && (

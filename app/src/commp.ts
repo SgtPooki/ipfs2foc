@@ -85,9 +85,41 @@ export function describePrepareFailure(err: unknown): PrepareFailure {
     if (msgs.some((m) => /Failed to fetch|NetworkError/i.test(m))) {
       return 'network failure while fetching — check connectivity and retry'
     }
+    if (msgs.some((m) => /stopped sending bytes/.test(m))) {
+      return 'source stalled — not serving this CID right now; retry later'
+    }
     return msgs[0] ?? 'failed'
   })()
   return { headline, detail }
+}
+
+/**
+ * Race a promise against `signal`. The hash-worker protocol has no abort
+ * channel — a request parked on a dead or suspended worker never settles — so
+ * abort wins the race and the caller terminates the worker via `job.cancel()`
+ * (the pool replaces it). The orphaned promise is dropped, not awaited.
+ */
+function raceAbort<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal == null) return p
+  return new Promise<T>((resolve, reject) => {
+    const reason = () => (signal.reason instanceof Error ? signal.reason : new DOMException('aborted', 'AbortError'))
+    if (signal.aborted) {
+      reject(reason())
+      return
+    }
+    const onAbort = () => reject(reason())
+    signal.addEventListener('abort', onAbort, { once: true })
+    p.then(
+      (v) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(v)
+      },
+      (e) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(e)
+      }
+    )
+  })
 }
 
 /**
@@ -97,12 +129,17 @@ export function describePrepareFailure(err: unknown): PrepareFailure {
  * URL. Streaming, constant-memory — the CAR is never fully buffered. The
  * `CarStreamSource` owns and closes its own stream, so there is no persistent
  * node to carry across calls.
+ *
+ * Aborting `signal` tears down the gateway stream, releases (and replaces) the
+ * hash-pool worker, and rejects with the abort reason — the stall watchdog and
+ * the per-row cancel both come through here (#43).
  */
 export async function computePiece(
   gateway: string,
   cidStr: string,
   relayBase: string,
-  onProgress?: (bytes: number) => void
+  onProgress?: (bytes: number) => void,
+  signal?: AbortSignal
 ): Promise<PieceResult> {
   // Normalize to canonical CIDv1 (CIDv0 `Qm…` is converted automatically), then
   // export/commit/relay all under that one form so the commitment stays byte-safe.
@@ -115,22 +152,34 @@ export async function computePiece(
   // One streaming `?format=car` request per root; blocks served from the
   // verified stream, with a per-block `?format=raw` fallback for any the stream
   // misses. Scoped to this root and closed when the export ends.
-  const source = new CarStreamSource(gateway)
-  const job = await beginHash()
+  const source = new CarStreamSource(gateway, { signal })
+  // If abort wins the acquire race, the late-resolving job still owns a pool
+  // slot — cancel it on arrival so the slot is replaced, not leaked.
+  const jobPromise = beginHash()
+  jobPromise.then(
+    (j) => {
+      if (signal?.aborted === true) j.cancel()
+    },
+    () => {
+      // surfaced through the raced await below
+    }
+  )
+  let job: Awaited<typeof jobPromise> | null = null
   let rawSize = 0
   let pieceCid: string
   try {
-    for await (const chunk of exportCanonicalCar(source, defaultGetCodec, root)) {
+    job = await raceAbort(jobPromise, signal)
+    for await (const chunk of exportCanonicalCar(source, defaultGetCodec, root, { signal })) {
       rawSize += chunk.length
-      await job.write(chunk)
+      await raceAbort(job.write(chunk), signal)
       onProgress?.(rawSize)
     }
 
     // verified: fr32-sha2-256-trunc254-padded-binary-tree-multihash src/async.js
     // digest — multihash bytes come out via digestInto(bytes, 0, true).
-    pieceCid = (Link.create(Raw.code, Digest.decode(await job.finish())) as CID).toString()
+    pieceCid = (Link.create(Raw.code, Digest.decode(await raceAbort(job.finish(), signal))) as CID).toString()
   } catch (err) {
-    job.cancel()
+    job?.cancel()
     throw err
   } finally {
     source.close()

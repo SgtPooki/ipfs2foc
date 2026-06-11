@@ -230,8 +230,12 @@ export class CarStreamSource implements BlockSource {
     this.#openStream = opts.openCarStream ?? ((root, signal) => defaultOpenCarStream(gateway, root, signal))
     this.#fetchRaw = opts.fetchRawBlock ?? ((cid, signal) => defaultFetchRawBlock(gateway, cid, signal))
     if (opts.signal != null) {
-      if (opts.signal.aborted) this.#controller.abort()
-      else opts.signal.addEventListener('abort', () => this.#controller.abort(), { once: true })
+      // Forward the reason: the caller's abort error (a stall watchdog, a user
+      // cancel) must surface from rejected gets, not a bare "signal is aborted
+      // without reason".
+      const ext = opts.signal
+      if (ext.aborted) this.#controller.abort(ext.reason)
+      else ext.addEventListener('abort', () => this.#controller.abort(ext.reason), { once: true })
     }
     // Aborting tears down the CAR fetch (via #controller) and, crucially,
     // rejects any parked get right away — a parked waiter must not depend on a
