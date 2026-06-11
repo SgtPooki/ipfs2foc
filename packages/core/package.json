@@ -8,6 +8,7 @@
     ".": "./src/car-url.ts",
     "./block-source": "./src/block-source.ts",
     "./capabilities": "./src/capabilities.ts",
+    "./cid-list": "./src/cid-list.ts",
     "./car-export": "./src/car-export.ts",
     "./car-stream-source": "./src/car-stream-source.ts",
     "./manifest": "./src/manifest.ts",

@@ -7,6 +7,13 @@ PieceCID v2, then submit them to storage providers and watch each copy commit
 on chain. Nothing to install, and no wallet key material ever enters the
 page.
 
+An inventory too large to paste loads as a file instead: pick or drop a
+`cids.txt` (one CID per line, blank lines and `#` comments ignored — the
+same shape the CLI's `--cids` reads) onto the input. The console streams the
+file through the parser and reports how many CIDs it accepted and which
+lines it rejected before anything runs; a CIDv0 and its CIDv1 form count
+once.
+
 ## What a run produces
 
 For each CID, the console computes the piece commitment and builds the pull

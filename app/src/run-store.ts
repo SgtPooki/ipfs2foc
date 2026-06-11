@@ -16,6 +16,13 @@ const SUBMIT_KEY = 'submit'
 
 export interface SavedRun {
   cidsText: string
+  /** Name of the loaded cids.txt, when the run's list came from a file (#50). */
+  fileName?: string
+  /** Accepted CIDs parsed from that file — kept out of `cidsText` so the
+   *  textarea never holds a multi-megabyte inventory. */
+  fileCids?: string[]
+  /** Rejected-line count from the file parse, restored for the intake summary. */
+  fileInvalidCount?: number
   gateway: string
   relayBase: string
   /** Completed pieces keyed by the CID string as the user entered it. */

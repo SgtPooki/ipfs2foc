@@ -2,6 +2,7 @@ import type { Capabilities } from 'ipfs2foc-core/capabilities'
 import { explorerDataSetUrl, explorerPieceUrl } from 'ipfs2foc-core/pdp-verifier'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_RELAY } from './capabilities.ts'
+import { type CidIntake, parseCidFile } from './cid-file.ts'
 import { computePiece, describePrepareFailure, type PieceResult } from './commp.ts'
 import { HASH_POOL_SIZE } from './hash-pool.ts'
 import { buildManifest, downloadManifest } from './manifest.ts'
@@ -128,6 +129,13 @@ export default function App({ caps }: { caps: Capabilities }) {
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [sessionDuration, setSessionDuration] = useState<bigint>(DEFAULT_SESSION_DURATION_SECONDS)
   const [cidsText, setCidsText] = useState('')
+  // CIDs loaded from a cids.txt file (#50). Kept out of the textarea: an
+  // inventory file can run to tens of thousands of lines, more than a
+  // textarea (or a person) should hold. Joined with the pasted list in
+  // `cids` below.
+  const [cidFile, setCidFile] = useState<{ name: string; intake: CidIntake } | null>(null)
+  const [cidFileBusy, setCidFileBusy] = useState(false)
+  const [cidFileError, setCidFileError] = useState<string | null>(null)
   const [relayBase, setRelayBase] = useState(caps.pieceBase ?? DEFAULT_RELAY)
   const [gateway, setGateway] = useState(DEFAULT_GATEWAY)
   const [rows, setRows] = useState<Row[]>([])
@@ -172,12 +180,19 @@ export default function App({ caps }: { caps: Capabilities }) {
       setCidsText(saved.cidsText)
       setRelayBase(saved.relayBase)
       setGateway(saved.gateway)
+      if (saved.fileCids != null && saved.fileCids.length > 0) {
+        setCidFile({
+          name: saved.fileName ?? 'cids.txt',
+          intake: { cids: saved.fileCids, invalidSamples: [], invalidCount: saved.fileInvalidCount ?? 0 },
+        })
+      }
       const savedCids = Array.from(
         new Set(
           saved.cidsText
             .split(/\s+/)
             .map((s) => s.trim())
             .filter((s) => s.length > 0)
+            .concat(saved.fileCids ?? [])
         )
       )
       const doneCount = savedCids.filter((cid) => savedResults.current[cid] != null).length
@@ -198,13 +213,16 @@ export default function App({ caps }: { caps: Capabilities }) {
       if (!hydrated.current) return
       void saveRun({
         cidsText: text,
+        fileName: cidFile?.name,
+        fileCids: cidFile?.intake.cids,
+        fileInvalidCount: cidFile?.intake.invalidCount,
         gateway,
         relayBase,
         results: savedResults.current,
         updatedAt: new Date().toISOString(),
       })
     },
-    [gateway, relayBase]
+    [gateway, relayBase, cidFile]
   )
 
   // Persist input edits (debounced) so a refresh keeps the CID list and source
@@ -222,9 +240,10 @@ export default function App({ caps }: { caps: Capabilities }) {
             .split(/\s+/)
             .map((s) => s.trim())
             .filter((s) => s.length > 0)
+            .concat(cidFile?.intake.cids ?? [])
         )
       ),
-    [cidsText]
+    [cidsText, cidFile]
   )
 
   const results = useMemo(() => rows.flatMap((r) => (r.state.phase === 'done' ? [r.state.result] : [])), [rows])
@@ -503,9 +522,8 @@ export default function App({ caps }: { caps: Capabilities }) {
     // Prune saved results for CIDs no longer in the input, then seed done rows
     // from the saved run — pieces are deterministic, so a saved result is final
     // and only the pending/failed CIDs go back through a worker.
-    savedResults.current = Object.fromEntries(
-      Object.entries(savedResults.current).filter(([cid]) => cids.includes(cid))
-    )
+    const inputSet = new Set(cids)
+    savedResults.current = Object.fromEntries(Object.entries(savedResults.current).filter(([cid]) => inputSet.has(cid)))
     setRows(
       cids.map((cid) => {
         const result = savedResults.current[cid]
@@ -532,10 +550,42 @@ export default function App({ caps }: { caps: Capabilities }) {
     }
   }, [cids, cidsText, persist, prepareOne])
 
+  // Parse a picked or dropped cids.txt. Streaming, so the only state the tab
+  // holds afterward is the accepted list and the reject summary.
+  const loadCidFile = useCallback(async (file: File) => {
+    setCidFileError(null)
+    setCidFileBusy(true)
+    try {
+      const intake = await parseCidFile(file)
+      if (intake.cids.length === 0) {
+        setCidFile(null)
+        setCidFileError(
+          intake.invalidCount > 0
+            ? `no valid CIDs in ${file.name} — ${intake.invalidCount} line(s) rejected (line ${intake.invalidSamples[0].line}: "${intake.invalidSamples[0].text}")`
+            : `no CIDs in ${file.name}`
+        )
+        return
+      }
+      setCidFile({ name: file.name, intake })
+    } catch (err) {
+      setCidFile(null)
+      setCidFileError(`could not read ${file.name}: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setCidFileBusy(false)
+    }
+  }, [])
+
+  const clearCidFile = useCallback(() => {
+    setCidFile(null)
+    setCidFileError(null)
+  }, [])
+
   const reset = useCallback(() => {
     savedResults.current = {}
     setRows([])
     setCidsText('')
+    setCidFile(null)
+    setCidFileError(null)
     setRestored(false)
     setSubmitState(null)
     setResumable(null)
@@ -829,10 +879,49 @@ export default function App({ caps }: { caps: Capabilities }) {
         <textarea
           className="cid-input"
           onChange={(e) => setCidsText(e.target.value)}
-          placeholder={'bafybei…\nQm…  (CIDv0 or CIDv1, one per line)'}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            const file = e.dataTransfer.files[0]
+            if (file == null) return
+            e.preventDefault()
+            void loadCidFile(file)
+          }}
+          placeholder={'bafybei…\nQm…  (CIDv0 or CIDv1, one per line)\nor drop a cids.txt here'}
           spellCheck={false}
           value={cidsText}
         />
+        <div className="file-intake">
+          <label className="btn small">
+            {cidFileBusy ? 'Reading…' : 'Load cids.txt'}
+            <input
+              accept=".txt,.csv,text/plain"
+              disabled={cidFileBusy || running}
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (file != null) void loadCidFile(file)
+              }}
+              type="file"
+            />
+          </label>
+          {cidFile != null && (
+            <>
+              <span className="panel-note">
+                {cidFile.intake.cids.length.toLocaleString()} CIDs from {cidFile.name}
+                {cidFile.intake.invalidCount > 0 &&
+                  ` · ${cidFile.intake.invalidCount.toLocaleString()} invalid line(s) skipped` +
+                    (cidFile.intake.invalidSamples.length > 0
+                      ? ` (first: line ${cidFile.intake.invalidSamples[0].line} "${cidFile.intake.invalidSamples[0].text}")`
+                      : '')}
+              </span>
+              <button className="btn small" disabled={running} onClick={clearCidFile} type="button">
+                Remove file
+              </button>
+            </>
+          )}
+          {cidFileError != null && <span className="err-text">{cidFileError}</span>}
+        </div>
         <details className="advanced">
           <summary>Sources</summary>
           <label className="field">

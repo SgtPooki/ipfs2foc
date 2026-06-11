@@ -338,6 +338,14 @@ body {
   margin-top: 18px;
 }
 
+.file-intake {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
 .table {
   font-family: var(--mono);
   font-size: 12.5px;
