@@ -16,11 +16,13 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      # Manifest mode: the action emits `releases_created` (aggregate) and
-      # `<path>--*` outputs, NOT the singular `release_created` of single-package
-      # mode. Gating on the wrong name silently skips publish (it did for 0.2.0).
+      # Manifest mode with the package at the ROOT path: the action emits the
+      # unprefixed outputs (`release_created`, `tag_name`) alongside the
+      # aggregate `releases_created`. The release unit is the repo root so the
+      # changelog captures app/, packages/core, and packages/relay commits —
+      # the npm tarball bundles core and app-dist, so those ARE the artifact.
       release_created: ${{ steps.release.outputs.releases_created }}
-      tag_name: ${{ steps.release.outputs['packages/cli--tag_name'] }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       # Opens/updates the release PR, and on merge cuts a GitHub release + tag.
       # Versioning stays pre-1.0: bump-minor-pre-major in release-please-config.json

@@ -3,9 +3,19 @@
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": false,
   "packages": {
-    "packages/cli": {
+    ".": {
       "release-type": "node",
-      "package-name": "ipfs2foc"
+      "package-name": "ipfs2foc",
+      "component": "ipfs2foc",
+      "include-component-in-tag": true,
+      "changelog-path": "packages/cli/CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "packages/cli/package.json",
+          "jsonpath": "$.version"
+        }
+      ]
     }
   }
 }
