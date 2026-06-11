@@ -1,8 +1,8 @@
 {
   "name": "ipfs2foc-monorepo",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Workspace root for ipfs2foc \u2014 the CLI (packages/cli), the redirect relay (packages/relay), the shared core (packages/core), and the browser console (app).",
+  "description": "Workspace root for ipfs2foc — the CLI (packages/cli), the redirect relay (packages/relay), the shared core (packages/core), and the browser console (app).",
   "type": "module",
   "packageManager": "pnpm@10.16.1",
   "engines": {
