@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0](https://github.com/SgtPooki/ipfs2foc/compare/ipfs2foc-v0.3.0...ipfs2foc-v0.4.0) (2026-06-11)
+
+
+### Features
+
+* min-piece floor warns by default in pdp-submit ([5ae8ddb](https://github.com/SgtPooki/ipfs2foc/commit/5ae8ddbd41659d5c52f2f020da37c5c5923ceedc))
+* quick tunnel falls back to http2 transport ([5077185](https://github.com/SgtPooki/ipfs2foc/commit/5077185a49e58c9c502f9022c6d88b32689ed4fa))
+* verify-on-chain in the browser console ([ec006d6](https://github.com/SgtPooki/ipfs2foc/commit/ec006d6733adddacd09a26cb4b8f36331feab020))
+
 ## [0.3.0](https://github.com/SgtPooki/ipfs2foc/compare/ipfs2foc-v0.2.0...ipfs2foc-v0.3.0) (2026-06-10)
 
 
