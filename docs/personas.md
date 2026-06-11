@@ -5,6 +5,11 @@ through Curio's PDP pull. Different operators run it under different disk,
 bandwidth, and time budgets. This doc maps those situations to concrete
 knob settings so a new operator can pick a profile and go.
 
+These profiles tune the headless CLI. For a small passthrough run, the
+[hosted console](browser-console.md) needs none of these knobs; the
+[local console](local-console.md) wraps the same machinery as the CLI
+behind `ipfs2foc serve` and honors the same flags.
+
 The two physical constraints that drive every recommendation here:
 
 - **Disk free on the migrator host.** The default hosting path writes
@@ -165,9 +170,10 @@ ipfs2foc pdp-submit \
   --max-in-flight 1
 ```
 
-Once multi-asset packing is available, this persona runs the default
-cached sub-piece path and lets per-aggregate eviction keep disk bounded
-at roughly one aggregate's worth.
+When source CIDs sit below the provider's minimum piece size, this
+persona switches to the multi-asset path (`plan --no-auto-pack` then
+`pack-cars`) and lets per-aggregate eviction keep disk bounded at
+roughly one aggregate's worth.
 
 ### Failure modes specific to this persona
 

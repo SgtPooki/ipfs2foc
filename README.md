@@ -471,7 +471,8 @@ The [`docs/`](docs/README.md) folder is organized by [Diátaxis](https://diataxi
   (disk/bandwidth/time budgets → knob settings, failure modes, recovery),
   [choosing a gateway](docs/sources.md), [public ingress](docs/ingress.md).
 - **Reference** — [command reference](#commands) and [glossary](docs/glossary.md).
-- **Explanation** — [how it works](#how-it-works),
+- **Explanation** — [how a migration lands on chain](docs/onchain.md) (the
+  invariants for integrators), [how it works](#how-it-works),
   [gas and payments](#network-gas-and-payments), [scope and limits](#scope-and-limits).
 
 ## Roadmap

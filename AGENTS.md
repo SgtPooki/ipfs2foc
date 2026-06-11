@@ -48,6 +48,27 @@ skills first.
 | Commit message | `git-commit`, `anti-ai-smell` |
 | `.research/**` writes | `research-folder-gitignored`, `no-internal-jargon-leakage` |
 
+## Reading this repo as a reference (not editing it)
+
+If you were pointed here to learn how FOC migration works — you are building
+your own integration, debugging a migration run, or answering "why does X
+behave this way" — start with these instead of the routing table:
+
+| Question | Read |
+|---|---|
+| Why must the CAR bytes be exactly canonical? What breaks if they aren't? | [`docs/onchain.md`](docs/onchain.md) — the invariants under every flow, each linked to the enforcing source |
+| How do I run a migration (commands, flows, consoles)? | [`docs/README.md`](docs/README.md) — the doc index; [`README.md#how-it-works`](README.md#how-it-works) for the pipeline |
+| What does this protocol term mean? | [`docs/glossary.md`](docs/glossary.md) |
+| How are keys handled? What can a session key do? | [`SECURITY.md`](SECURITY.md) |
+| Why is my AddPieces batch reverting? | [`docs/onchain.md`](docs/onchain.md#addpieces-batches-against-a-hard-event-cap), then the comment at the batching loop in `packages/cli/src/submit-pdp.ts` |
+| The data set committed but shows no proof — is something wrong? | [`docs/onchain.md`](docs/onchain.md#committed-is-not-proven) |
+| My RPC says the transaction has no receipt | [`docs/onchain.md`](docs/onchain.md#read-state-not-receipts) |
+| What exactly does the provider validate on pull and add? | Curio source, not this repo: links in `docs/onchain.md`; do not assert upstream behavior without reading it |
+
+The verification-and-integrity skills below apply to readers too: chain
+state is canonical, HTTP probes are side channels, and upstream behavior is
+established by reading upstream source.
+
 ## Skill index
 
 ### Verification and integrity (ipfs2foc / FOC specific)

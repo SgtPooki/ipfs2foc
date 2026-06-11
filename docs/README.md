@@ -38,6 +38,11 @@ for how-to guides and reference once you are running real migrations.
 
 ## Explanation — how and why
 
+- [How a migration lands on chain](onchain.md) — the invariants under every
+  flow: the CAR bytes as the commitment's definition, piece-CID determinism
+  across providers, the AddPieces event cap, committed vs proven, and
+  reading chain state over receipts. Start here if you are integrating
+  against FOC with your own tooling.
 - [How it works](../README.md#how-it-works) — the commP → pack → pull →
   aggregate-add pipeline, the redirect, and the aggregate root.
 - [Network gas and payments](../README.md#network-gas-and-payments) — which
